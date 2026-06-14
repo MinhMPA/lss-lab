@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>lss-lab — large-scale structure visualization tools</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --space:#04060c;
+    --panel:rgba(10,14,26,0.82);
+    --line:#1d2742;
+    --ink:#e9e7dc;
+    --dim:#8b93a7;
+    --amber:#ffb454;
+    --cyan:#7fd8e8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{min-height:100%;background:var(--space);color:var(--ink);
+    font-family:'Space Grotesk',sans-serif;line-height:1.5}
+  body{display:flex;align-items:center;justify-content:center;padding:7vh 6vw}
+  main{max-width:60ch;width:100%}
+  h1{font-size:clamp(1.6rem,4vw,2.6rem);font-weight:700;letter-spacing:.01em}
+  h1 em{font-style:normal;color:var(--amber)}
+  .lede{color:var(--dim);margin-top:10px;font-size:.95rem;max-width:54ch}
+  h2{font-size:.66rem;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--dim);font-weight:500;margin:40px 0 14px}
+  a.card{display:block;text-decoration:none;color:inherit;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:18px 20px;transition:border-color .15s,transform .15s}
+  a.card:hover{border-color:var(--amber);transform:translateY(-2px)}
+  a.card h3{font-size:1.15rem;font-weight:500}
+  a.card h3 .arrow{color:var(--amber);margin-left:6px}
+  a.card p{color:var(--dim);font-size:.85rem;margin-top:6px}
+  footer{margin-top:48px;font-size:.7rem;color:var(--dim);
+    font-family:'IBM Plex Mono',monospace}
+  footer a{color:var(--cyan);text-decoration:none}
+</style>
+</head>
+<body>
+<main>
+  <h1>lss-lab</h1>
+  <p class="lede">Interactive visualization and animation tools for
+     <em>large-scale structure</em> — cosmological simulations and galaxy
+     surveys. Making the physics of the cosmic web tangible.</p>
+
+  <h2>Tools</h2>
+  <a class="card" href="cosmic-web-sandbox/">
+    <h3>The Cosmic Web Sandbox<span class="arrow">&rarr;</span></h3>
+    <p>An interactive, in-browser cosmic web you reshape with cosmological
+       dials. Gaussian field, FFTs, and Lagrangian perturbation theory run
+       client-side, so the controls respond in real time.</p>
+  </a>
+
+  <footer>
+    Source: <a href="https://github.com/MinhMPA/lss-lab">github.com/MinhMPA/lss-lab</a>
+  </footer>
+</main>
+</body>
+</html>
