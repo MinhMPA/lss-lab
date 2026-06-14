@@ -107,7 +107,7 @@
 <button id="togglePanel">Controls</button>
 
 <aside id="panel">
-  <h2>Universe ingredients</h2>
+  <h2>Cosmological parameters</h2>
 
   <div class="ctl">
     <div class="row"><label for="om">Matter density &Omega;<sub>m</sub></label><span class="val" id="omVal"></span></div>
@@ -131,16 +131,16 @@
   <h2>Views</h2>
   <div class="btnrow">
     <button data-render="splat" class="primary">Splats</button>
-    <button data-render="volume">Volume</button>
+    <button data-render="volume">Clouds</button>
   </div>
-  <div class="hint">Splats: glowing points. Volume: ray-marched density cloud.</div>
+  <div class="hint">Splats: glowing points. Clouds: ray-marched density cloud.</div>
   <div class="btnrow" style="margin-top:6px">
     <button id="sliceToggle">Matter 2D slice (inset)</button>
     <button id="haloToggle">Halos</button>
     <button id="galToggle" class="primary">Galaxies (HOD)</button>
-    <button id="boxToggle" class="primary">Boundary</button>
+    <button id="boxToggle" class="primary">Box boundary</button>
   </div>
-  <div class="hint" id="haloInfo">Proxy halos = density peaks; galaxies via Zheng et al. (2004) HOD model. Cluster-scale here.</div>
+  <div class="hint" id="haloInfo">Proxy halos = density peaks; galaxies via <a href="https://iopscience.iop.org/article/10.1086/466510">Zheng et al. (2004)</a> HOD model.</div>
   <div class="ctl" style="margin-top:8px">
     <div class="row"><label for="hmin">HOD log M<sub>min</sub></label><span class="val" id="hminVal"></span></div>
     <input type="range" id="hmin" min="13.0" max="14.8" step="0.05" value="13.5">
