@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The Cosmic Web Sandbox — interactive cosmic web</title>
+<title>The Cosmic Web Sandbox</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -22,68 +22,67 @@
   canvas#scene{position:fixed;inset:0;display:block;cursor:grab}
   canvas#scene:active{cursor:grabbing}
 
-  header{position:fixed;top:18px;left:22px;z-index:5;pointer-events:none;max-width:min(46ch,60vw)}
-  header h1{font-size:clamp(1.15rem,2.4vw,1.7rem);font-weight:700;letter-spacing:.01em}
+  header{position:fixed;top:20px;left:24px;z-index:5;pointer-events:none;max-width:min(52ch,62vw)}
+  header h1{font-size:clamp(1.8rem,3.4vw,3.0rem);font-weight:700;letter-spacing:.01em}
   header h1 em{font-style:normal;color:var(--amber)}
-  header p{font-size:.8rem;color:var(--dim);margin-top:4px;line-height:1.45}
+  header p{font-size:1.02rem;color:var(--dim);margin-top:7px;line-height:1.5}
   header p strong{color:var(--cyan);font-weight:500}
 
   /* ---------- control panel ---------- */
-  #panel{position:fixed;top:18px;right:18px;z-index:6;width:272px;
+  #panel{position:fixed;top:20px;right:20px;z-index:6;width:340px;
     background:var(--panel);backdrop-filter:blur(10px);
-    border:1px solid var(--line);border-radius:10px;padding:16px 16px 12px;
-    max-height:calc(100% - 36px);overflow-y:auto}
-  #panel h2{font-size:.66rem;letter-spacing:.18em;text-transform:uppercase;
-    color:var(--dim);font-weight:500;margin:14px 0 8px}
+    border:1px solid var(--line);border-radius:12px;padding:18px 18px 14px;
+    max-height:calc(100% - 40px);overflow-y:auto}
+  #panel h2{font-size:.95rem;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--amber);font-weight:700;margin:18px 0 9px}
   #panel h2:first-child{margin-top:0}
-  .ctl{margin-bottom:10px}
-  .ctl .row{display:flex;justify-content:space-between;align-items:baseline;font-size:.82rem}
-  .ctl .row .val{font-family:'IBM Plex Mono',monospace;font-size:.78rem;color:var(--cyan)}
-  .ctl input[type=range]{width:100%;margin-top:5px;-webkit-appearance:none;appearance:none;
-    height:3px;border-radius:2px;background:var(--line);outline:none}
+  .ctl{margin-bottom:12px}
+  .ctl .row{display:flex;justify-content:space-between;align-items:baseline;font-size:1.06rem}
+  .ctl .row .val{font-family:'IBM Plex Mono',monospace;font-size:1.0rem;color:var(--cyan)}
+  .ctl input[type=range]{width:100%;margin-top:7px;-webkit-appearance:none;appearance:none;
+    height:4px;border-radius:2px;background:var(--line);outline:none}
   .ctl input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
-    width:14px;height:14px;border-radius:50%;background:var(--amber);
+    width:18px;height:18px;border-radius:50%;background:var(--amber);
     border:2px solid var(--space);cursor:pointer}
-  .ctl input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;
+  .ctl input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;
     background:var(--amber);border:2px solid var(--space);cursor:pointer}
   .ctl input[type=range]:focus-visible{outline:2px solid var(--cyan);outline-offset:4px}
-  .hint{font-size:.68rem;color:var(--dim);line-height:1.4;margin-top:2px}
+  .hint{font-size:.86rem;color:var(--dim);line-height:1.45;margin-top:3px}
 
-  .btnrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px}
-  button,select{font-family:'IBM Plex Mono',monospace;font-size:.7rem;color:var(--ink);
-    background:transparent;border:1px solid var(--line);border-radius:6px;
-    padding:5px 9px;cursor:pointer;transition:border-color .15s,color .15s}
+  .btnrow{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:4px}
+  button,select{font-family:'IBM Plex Mono',monospace;font-size:.92rem;color:var(--ink);
+    background:transparent;border:1px solid var(--line);border-radius:7px;
+    padding:7px 12px;cursor:pointer;transition:border-color .15s,color .15s}
   button:hover{border-color:var(--amber);color:var(--amber)}
   button:focus-visible,select:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
   button.primary{border-color:var(--amber);color:var(--amber)}
   select{background:var(--panel)}
   option{background:#0a0e1a}
 
-  #status{font-size:.68rem;font-family:'IBM Plex Mono',monospace;color:var(--amber);
-    min-height:1em;margin-top:8px;opacity:0;transition:opacity .2s}
+  #status{font-size:.86rem;font-family:'IBM Plex Mono',monospace;color:var(--amber);
+    min-height:1em;margin-top:9px;opacity:0;transition:opacity .2s}
   #status.on{opacity:1}
 
-  /* ---------- P(k) inset ---------- */
-  #sliceBox{position:fixed;left:18px;top:96px;z-index:5;
+  /* ---------- insets ---------- */
+  .cap, #sliceBox .cap, #pk2Box .cap, #pkbox .cap{
+    font-size:.84rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink);font-weight:500}
+  #sliceBox{position:fixed;left:20px;top:108px;z-index:5;
     background:var(--panel);backdrop-filter:blur(10px);
-    border:1px solid var(--line);border-radius:10px;padding:10px 12px 8px}
-  #sliceBox .cap{font-size:.64rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
-  #slice{display:block;margin-top:5px;border-radius:4px;width:200px;height:200px}
+    border:1px solid var(--line);border-radius:12px;padding:11px 13px 9px}
+  #slice{display:block;margin-top:7px;border-radius:4px;width:240px;height:240px}
 
-  #pk2Box{position:fixed;right:18px;bottom:78px;z-index:5;
+  #pk2Box{position:fixed;right:20px;bottom:84px;z-index:5;
     background:var(--panel);backdrop-filter:blur(10px);
-    border:1px solid var(--line);border-radius:10px;padding:10px 12px 8px}
-  #pk2Box .cap{font-size:.64rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
-  #pk2{display:block;margin-top:5px;border-radius:4px;width:180px;height:180px}
+    border:1px solid var(--line);border-radius:12px;padding:11px 13px 9px}
+  #pk2{display:block;margin-top:7px;border-radius:4px;width:220px;height:220px}
 
-  #pkbox{position:fixed;left:18px;bottom:18px;z-index:5;
+  #pkbox{position:fixed;left:20px;bottom:20px;z-index:5;
     background:var(--panel);backdrop-filter:blur(10px);
-    border:1px solid var(--line);border-radius:10px;padding:10px 12px 6px}
-  #pkbox .cap{font-size:.64rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
-  #pk{display:block;margin-top:4px}
+    border:1px solid var(--line);border-radius:12px;padding:11px 13px 8px}
+  #pk{display:block;margin-top:6px;width:396px;height:360px}
 
-  footer{position:fixed;right:18px;bottom:14px;z-index:4;text-align:right;
-    font-size:.66rem;color:var(--dim);line-height:1.5;max-width:46ch;pointer-events:none}
+  footer{position:fixed;right:20px;bottom:16px;z-index:4;text-align:right;
+    font-size:.76rem;color:var(--dim);line-height:1.5;max-width:48ch;pointer-events:none}
   footer span{color:var(--ink)}
 
   #togglePanel{display:none;position:fixed;top:14px;right:14px;z-index:7}
@@ -107,8 +106,8 @@
 
 <header>
   <h1>The <em>Cosmic Web</em> Sandbox</h1>
-  <p>One random seed, many possible universes. <strong>Drag the dials</strong> and watch the
-     same cosmic web respond to different physics. Drag to rotate &middot; scroll or pinch to zoom.</p>
+  <p><strong>The cosmic web in a box, tunable.</strong> Turn the cosmological dials and watch
+     the same patch of universe rearrange itself. Drag to rotate &middot; scroll to zoom.</p>
 </header>
 
 <button id="togglePanel">Controls</button>
@@ -140,24 +139,27 @@
     <button data-render="splat" class="primary">Splats</button>
     <button data-render="volume">Volume</button>
   </div>
+  <div class="hint">Splats: glowing points. Volume: ray-marched density cloud.</div>
   <div class="btnrow" style="margin-top:6px">
     <button id="sliceToggle">Matter 2D slice (inset)</button>
     <button id="haloToggle">Halos</button>
-    <button id="galToggle">Galaxies (HOD)</button>
+    <button id="galToggle" class="primary">Galaxies (HOD)</button>
+    <button id="boxToggle" class="primary">Boundary</button>
   </div>
   <div class="hint" id="haloInfo">Proxy halos = density peaks; galaxies via Zheng et al. (2004) HOD model. Cluster-scale here.</div>
   <div class="ctl" style="margin-top:8px">
     <div class="row"><label for="hmin">HOD log M<sub>min</sub></label><span class="val" id="hminVal"></span></div>
-    <input type="range" id="hmin" min="13.0" max="14.8" step="0.05" value="13.8">
+    <input type="range" id="hmin" min="13.0" max="14.8" step="0.05" value="13.5">
   </div>
   <div class="ctl">
     <div class="row"><label for="hm1">HOD log M<sub>1</sub></label><span class="val" id="hm1Val"></span></div>
-    <input type="range" id="hm1" min="13.8" max="15.6" step="0.05" value="15.0">
+    <input type="range" id="hm1" min="13.8" max="16.0" step="0.05" value="15.6">
   </div>
   <div class="ctl">
     <div class="row"><label for="hal">satellite slope &alpha;</label><span class="val" id="halVal"></span></div>
-    <input type="range" id="hal" min="0.4" max="1.6" step="0.05" value="1.0">
+    <input type="range" id="hal" min="0.4" max="2.0" step="0.05" value="1.6">
   </div>
+  <div class="hint">Which halos host a galaxy, the mass per extra satellite, and how fast satellites multiply.</div>
 
   <h2>Power spectrum</h2>
   <div class="btnrow">
@@ -185,6 +187,7 @@
     <button data-preset="lows8">Smooth</button>
     <button data-preset="blue">Blue tilt</button>
   </div>
+  <div class="hint">One-tap parameter sets to compare at a glance.</div>
 
   <h2>Simulation configurations</h2>
   <div class="btnrow">
@@ -224,7 +227,7 @@
 
 <div id="pkbox">
   <div class="cap">Power spectrum P(k)</div>
-  <canvas id="pk" width="240" height="210"></canvas>
+  <canvas id="pk" width="396" height="360"></canvas>
 </div>
 
 <footer>
@@ -244,7 +247,7 @@
 <script>
 'use strict';
 /* =====================================================================
- * The Cosmic Web Sandbox
+ * The Tunable Universe
  * ---------------------------------------------------------------------
  * Physics pipeline (all in the browser):
  *   1. Draw a unit Gaussian white-noise field w(q) on an N^3 grid
@@ -273,10 +276,10 @@ const state = {
   om: 0.315, s8: 0.811, ns: 0.965, a: 1.0,
   N: 64, seed: 12345, order: 1,
   rsd: 'off', showSlice: false,
-  showHalos: false, showGals: false,
+  showHalos: false, showGals: true, showBox: true,
   render: 'splat',
   pkMatter: false, pkHalos: false, pkGals: false, pk2D: false,
-  hodMmin: 13.8, hodM1: 15.0, hodAlpha: 1.0,
+  hodMmin: 13.5, hodM1: 15.6, hodAlpha: 1.6,
   playing: false,
 };
 
@@ -598,6 +601,20 @@ document.body.prepend(renderer.domElement);
 
 const scene  = new THREE.Scene();
 scene.background = new THREE.Color(0x04060c);
+
+/* Periodic-box boundary: the original thin (1px) wireframe around the volume.
+   Visibility is toggled live via state.showBox. */
+let boundary = null;
+function buildBoundary(){
+  const geo = new THREE.BoxGeometry(BOX, BOX, BOX);
+  boundary = new THREE.LineSegments(
+    new THREE.EdgesGeometry(geo),
+    new THREE.LineBasicMaterial({ color: 0xffce70, transparent: true, opacity: 0.5 }));
+  boundary.visible = state.showBox;
+  scene.add(boundary);
+  geo.dispose();
+}
+buildBoundary();
 const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 1, 6000);
 
 const uniforms = {
@@ -790,7 +807,7 @@ function refreshLabels(){
   $('zHint').textContent = fmtZ(state.a);
   const mp = state.om*2.775e11*Math.pow(BOX/state.N, 3)/1e12;
   $('boxinfo').textContent =
-    `${BOX.toFixed(0)} Mpc/h box · ${state.N}\u00B3 particles · each point ≈ ${mp.toFixed(1)}\u00D710\u00B9\u00B2 M\u2609 of matter`;
+    `${BOX.toFixed(0)} Mpc/h periodic box (leave one side, return on the other) · ${state.N}\u00B3 particles · each point ≈ ${mp.toFixed(1)}\u00D710\u00B9\u00B2 M\u2609`;
 }
 function refreshAmp(){
   const D = state.s8*growthNorm(state.a, state.om);
@@ -907,6 +924,11 @@ $('galToggle').addEventListener('click', () => {
   $('galToggle').classList.toggle('primary', state.showGals);
   if (galPoints) galPoints.visible = state.showGals;
   if (state.showHalos || state.showGals) updateHalos();
+});
+$('boxToggle').addEventListener('click', () => {
+  state.showBox = !state.showBox;
+  $('boxToggle').classList.toggle('primary', state.showBox);
+  if (boundary) boundary.visible = state.showBox;
 });
 const hodSync = () => { $('hminVal').textContent = state.hodMmin.toFixed(2);
   $('hm1Val').textContent = state.hodM1.toFixed(2); $('halVal').textContent = state.hodAlpha.toFixed(2); };
@@ -1059,7 +1081,7 @@ function buildHaloObjects(){
       precision mediump float; varying float vT;
       void main(){ vec2 uv = gl_PointCoord*2.0-1.0; float r2 = dot(uv,uv);
         if (r2 > 1.0) discard; float a = exp(-2.5*r2);
-        vec3 cen = vec3(1.0,0.85,0.45), sat = vec3(0.55,0.9,1.0);
+        vec3 cen = vec3(1.0,0.85,0.45), sat = vec3(1.0,0.42,0.85);
         vec3 c = mix(cen, sat, step(0.5, vT));
         gl_FragColor = vec4(c*a, a); }`,
   });
@@ -1226,7 +1248,8 @@ function measurePk(){
 /* ------------------------- P(k) inset ------------------------------ */
 const pkCanvas = $('pk'), pkCtx = pkCanvas.getContext('2d');
 function drawPk(){
-  const W = pkCanvas.width, H = pkCanvas.height, ctx = pkCtx;
+  const ctx = pkCtx, W = 330, H = 300;               // logical drawing space
+  ctx.setTransform(pkCanvas.width/W, 0, 0, pkCanvas.height/H, 0, 0);  // scale up to the actual canvas
   ctx.clearRect(0, 0, W, H);
   // FIXED axes so cosmological changes are visible (no auto-rescaling)
   const kLo = 0.004, kHi = 0.7;                       // h/Mpc, turnover .. BAO band
@@ -1235,9 +1258,9 @@ function drawPk(){
   const ampSq = Math.pow(state.s8*growthNorm(state.a, state.om), 2);
 
   // panel split: top = P(k), bottom = BAO wiggle ratio
-  const topH = H - 64, botY0 = H - 56, botH = 40;
-  const X  = lk => 30 + (W - 40)*(lk - lo)/(hi - lo);
-  const Yp = lp => 8 + (topH - 16)*(1 - (lp - pLo)/(pHi - pLo));
+  const topH = H - 92, botY0 = H - 78, botH = 52;
+  const X  = lk => 38 + (W - 50)*(lk - lo)/(hi - lo);
+  const Yp = lp => 10 + (topH - 22)*(1 - (lp - pLo)/(pHi - pLo));
 
   // --- top: P(k) ---
   const T = makeTransfer(state.om), Tnw = makeTransferNW(state.om);
@@ -1245,7 +1268,7 @@ function drawPk(){
   // gridlines
   ctx.strokeStyle = 'rgba(139,147,167,0.12)'; ctx.lineWidth = 1;
   for (let e=-2;e<=0;e++){ const x=X(e); ctx.beginPath(); ctx.moveTo(x,8); ctx.lineTo(x,topH-8); ctx.stroke(); }
-  for (let lp=2; lp<=6; lp++){ const y=Yp(lp); ctx.beginPath(); ctx.moveTo(30,y); ctx.lineTo(W-10,y); ctx.stroke(); }
+  for (let lp=2; lp<=6; lp++){ const y=Yp(lp); ctx.beginPath(); ctx.moveTo(38,y); ctx.lineTo(W-10,y); ctx.stroke(); }
   const lineP = (fn, color, width) => {
     ctx.strokeStyle = color; ctx.lineWidth = width; ctx.beginPath();
     for (let i=0;i<=140;i++){ const lk=lo+(hi-lo)*i/140, k=Math.pow(10,lk);
@@ -1261,30 +1284,30 @@ function drawPk(){
       const lp=Math.log10(m.Ps[i]); if(lp<pLo||lp>pHi) continue;
       ctx.beginPath(); ctx.arc(X(lk),Yp(lp),1.5,0,6.28); ctx.fill(); } };
   dots(pkData.matter,'#ffffff'); dots(pkData.halos,'#9ec7ff'); dots(pkData.gals,'#ffd24a');
-  ctx.fillStyle='#8b93a7'; ctx.font='9px "IBM Plex Mono", monospace';
-  ctx.fillText('log P(k)', 4, 14);
+  ctx.fillStyle='#8b93a7'; ctx.font='12px "IBM Plex Mono", monospace';
+  ctx.fillText('log P(k)', 5, 18);
   // legend
   const leg = [['#ffb454','linear P'],['#ffffff','matter P'],['#9ec7ff','halo P'],['#ffd24a','galaxy P']];
-  let ly = 16;
+  let ly = 20;
   leg.forEach(([c,lab],i)=>{ ctx.fillStyle=c;
-    if (i===0){ ctx.fillRect(W-78, ly-3, 9, 2); } else { ctx.beginPath(); ctx.arc(W-73, ly-2, 2, 0, 6.28); ctx.fill(); }
-    ctx.fillStyle='#b9c0d0'; ctx.fillText(lab, W-64, ly); ly += 11; });
+    if (i===0){ ctx.fillRect(W-104, ly-5, 12, 3); } else { ctx.beginPath(); ctx.arc(W-98, ly-4, 3, 0, 6.28); ctx.fill(); }
+    ctx.fillStyle='#b9c0d0'; ctx.fillText(lab, W-86, ly); ly += 16; });
 
   // --- bottom: BAO wiggle ratio P_full / P_nowiggle ---
   const rLo=0.85, rHi=1.15;
   const Yr = r => botY0 + botH*(1 - (r - rLo)/(rHi - rLo));
   ctx.strokeStyle='rgba(139,147,167,0.25)'; ctx.lineWidth=1;
-  ctx.beginPath(); ctx.moveTo(30,Yr(1)); ctx.lineTo(W-10,Yr(1)); ctx.stroke();   // ratio=1
+  ctx.beginPath(); ctx.moveTo(38,Yr(1)); ctx.lineTo(W-10,Yr(1)); ctx.stroke();   // ratio=1
   ctx.strokeStyle='#7fd8e8'; ctx.lineWidth=1.6; ctx.beginPath();
   for (let i=0;i<=160;i++){ const lk=lo+(hi-lo)*i/160, k=Math.pow(10,lk);
     const r=Math.pow(T(k)/Tnw(k),2), x=X(lk), y=Yr(Math.max(rLo,Math.min(rHi,r)));
     i? ctx.lineTo(x,y):ctx.moveTo(x,y); }
   ctx.stroke();
   ctx.fillStyle='#8b93a7';
-  ctx.fillText('BAO wiggle', 34, botY0+10);
-  ctx.fillText('k [h/Mpc] →', W-78, H-3);
+  ctx.fillText('BAO wiggle', 40, botY0+12);
+  ctx.fillText('k [h/Mpc] →', W-96, H-5);
   // x ticks
-  for (let e=-2;e<=0;e++){ ctx.fillText('10'+(e), X(e)-8, H-3); }
+  for (let e=-2;e<=0;e++){ ctx.fillText('10'+(e), X(e)-10, H-5); }
 }
 
 /* ------------------- 2D P(k) of the column density ----------------- */
@@ -1468,6 +1491,7 @@ function setRenderMode(mode){
 /* --------------------------- main loop ------------------------------ */
 let prevT = performance.now();
 function loop(t){
+  requestAnimationFrame(loop);                  // reschedule FIRST so the loop can never die
   const dt = (t - prevT)/1000; prevT = t;
 
   if (morphT0 >= 0){
@@ -1485,9 +1509,14 @@ function loop(t){
     cam.theta += dt*0.05;                       // gentle idle rotation
 
   applyCamera();
-  if (post.on){ if (!rtScene) initPost(); renderPost(); }
-  else renderer.render(scene, camera);
-  requestAnimationFrame(loop);
+  try {
+    if (post.on){ if (!rtScene) initPost(); renderPost(); }
+    else renderer.render(scene, camera);
+  } catch (err) {
+    // bloom/post pipeline failed on this GPU/browser — fall back to plain rendering
+    if (post.on){ console.warn('Post-processing disabled (fell back to direct render):', err); post.on = false; }
+    try { renderer.setRenderTarget(null); renderer.render(scene, camera); } catch (_) {}
+  }
 }
 
 addEventListener('resize', () => {
