@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Galaxy Size — LSS Correlation Explorer · lss-lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --space:#04060c;
+    --panel:rgba(10,14,26,0.86);
+    --line:#1d2742;
+    --ink:#e9e7dc;
+    --dim:#8b93a7;
+    --amber:#ffb454;
+    --cyan:#7fd8e8;
+    --rose:#ff7a9c;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--space);color:var(--ink);
+    font-family:'Space Grotesk',system-ui,sans-serif;line-height:1.5;overflow:hidden}
+  #stage{position:fixed;inset:0}
+  canvas#field{position:absolute;inset:0;width:100%;height:100%;display:block;
+    cursor:crosshair;touch-action:none}
+
+  /* ---- title ---- */
+  #title{position:absolute;top:18px;left:22px;max-width:46ch;pointer-events:none;
+    text-shadow:0 2px 18px rgba(0,0,0,.85)}
+  #title h1{font-size:clamp(1.05rem,2.4vw,1.5rem);font-weight:700;letter-spacing:.01em}
+  #title h1 em{font-style:normal;color:var(--amber)}
+  #title p{color:var(--dim);font-size:.78rem;margin-top:4px;max-width:42ch}
+  #title a{color:var(--cyan);text-decoration:none;pointer-events:auto}
+
+  /* ---- control panel ---- */
+  #panel{position:absolute;top:16px;right:16px;width:312px;max-height:calc(100vh - 32px);
+    overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:14px 16px 18px;backdrop-filter:blur(7px);
+    -webkit-backdrop-filter:blur(7px);font-size:.82rem}
+  #panel::-webkit-scrollbar{width:8px}
+  #panel::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
+  .grp{margin-top:16px}
+  .grp:first-child{margin-top:2px}
+  .grp h2{font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--dim);font-weight:500;margin-bottom:9px;border-bottom:1px solid var(--line);
+    padding-bottom:5px}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:9px 0}
+  .row label{color:var(--ink);font-size:.78rem;flex:0 0 auto}
+  .row .val{font-family:'IBM Plex Mono',monospace;color:var(--cyan);font-size:.72rem;
+    flex:0 0 auto;min-width:46px;text-align:right}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:3px;
+    background:var(--line);border-radius:2px;outline:none;margin:2px 0}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;
+    border-radius:50%;background:var(--amber);cursor:pointer;border:2px solid var(--space)}
+  input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;
+    background:var(--amber);cursor:pointer;border:2px solid var(--space)}
+  .slider{display:block;margin:6px 0 4px}
+  .btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+  button.tog{flex:1 1 auto;background:transparent;color:var(--dim);
+    border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit;
+    font-size:.74rem;cursor:pointer;transition:.13s}
+  button.tog:hover{border-color:var(--amber);color:var(--ink)}
+  button.tog.on{border-color:var(--amber);color:var(--amber);
+    background:rgba(255,180,84,.08)}
+  .hint{color:var(--dim);font-size:.68rem;margin-top:7px;line-height:1.45}
+
+  /* ---- scatter inset ---- */
+  #inset{position:absolute;left:16px;bottom:16px;width:min(34vw,300px);
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:9px 11px 8px;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px)}
+  #inset h3{font-size:.6rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);
+    font-weight:500;margin-bottom:5px}
+  canvas#scatter{width:100%;height:auto;display:block;border-radius:4px}
+  #inset .rdo{display:flex;justify-content:space-between;margin-top:6px;gap:8px;
+    font-family:'IBM Plex Mono',monospace;font-size:.66rem;color:var(--dim)}
+  #inset .rdo b{color:var(--amber);font-weight:500}
+
+  /* ---- readout footer ---- */
+  #foot{position:absolute;right:16px;bottom:14px;font-family:'IBM Plex Mono',monospace;
+    font-size:.64rem;color:var(--dim);text-align:right;pointer-events:none;
+    text-shadow:0 1px 8px rgba(0,0,0,.9)}
+  #foot b{color:var(--cyan);font-weight:400}
+
+  #toggle{position:absolute;top:16px;right:16px;display:none;z-index:5;
+    background:var(--panel);color:var(--amber);border:1px solid var(--amber);
+    border-radius:8px;padding:8px 12px;font:inherit;font-size:.78rem;cursor:pointer}
+  @media(max-width:760px){
+    #panel{display:none;width:min(92vw,330px);top:60px}
+    #panel.open{display:block}
+    #toggle{display:block}
+    #inset{width:min(60vw,260px)}
+    #title{max-width:60vw}
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="field"></canvas>
+
+  <div id="title">
+    <h1>Galaxy Size &mdash; <em>LSS Correlation</em> Explorer</h1>
+    <p>Member-galaxy sizes inside dark-matter host halos, correlated with the
+       large-scale gravitational potential well and density field. Click a halo to
+       inspect its members.</p>
+  </div>
+
+  <button id="toggle">Controls</button>
+
+  <div id="panel">
+    <div class="grp">
+      <h2>Large-scale field</h2>
+      <div class="btns" id="viewBtns">
+        <button class="tog on" data-view="well">Potential well &minus;&Phi;</button>
+        <button class="tog" data-view="delta">Density &delta;</button>
+      </div>
+      <label class="slider">Field amplitude <span class="val" id="vAmp"></span></label>
+      <input type="range" id="amp" min="0.3" max="2.5" step="0.05" value="1.0">
+      <label class="slider">Large-scale tilt <span class="val" id="vTilt"></span></label>
+      <input type="range" id="tilt" min="-1.5" max="0.6" step="0.05" value="-0.6">
+      <div class="btns" style="margin-top:8px">
+        <button class="tog" id="reseed">New realization</button>
+        <button class="tog on" id="contours">Contours</button>
+      </div>
+    </div>
+
+    <div class="grp">
+      <h2>Size &ndash; environment coupling</h2>
+      <label class="slider">Potential-well coupling <span class="val" id="vBwell"></span></label>
+      <input type="range" id="bwell" min="-0.6" max="0.6" step="0.01" value="0.30">
+      <label class="slider">Density coupling <span class="val" id="vBdelta"></span></label>
+      <input type="range" id="bdelta" min="-0.6" max="0.6" step="0.01" value="0.12">
+      <label class="slider">Tidal truncation <span class="val" id="vTidal"></span></label>
+      <input type="range" id="tidal" min="0" max="0.5" step="0.01" value="0.18">
+      <label class="slider">Intrinsic scatter <span class="val" id="vScat"></span></label>
+      <input type="range" id="scat" min="0" max="0.5" step="0.01" value="0.14">
+      <div class="hint">Sizes are log-normal:
+        log R = log R&#8320; + b<sub>&Phi;</sub>&middot;&#373; + b<sub>&delta;</sub>&middot;&#948;&#770;
+        &minus; tidal&middot;f(r/r<sub>vir</sub>) + scatter.</div>
+    </div>
+
+    <div class="grp">
+      <h2>Halos &amp; galaxies</h2>
+      <label class="slider">Host halos <span class="val" id="vNhalo"></span></label>
+      <input type="range" id="nhalo" min="4" max="40" step="1" value="22">
+      <label class="slider">Members / halo <span class="val" id="vNmem"></span></label>
+      <input type="range" id="nmem" min="3" max="24" step="1" value="11">
+      <label class="slider">Size exaggeration <span class="val" id="vExag"></span></label>
+      <input type="range" id="exag" min="0.5" max="3" step="0.1" value="1.4">
+      <div class="btns" style="margin-top:8px">
+        <button class="tog on" id="orbit">Orbits</button>
+        <button class="tog on" id="showhalos">Halo disks</button>
+      </div>
+    </div>
+
+    <div class="grp">
+      <h2>Scatter plot x-axis</h2>
+      <div class="btns" id="axisBtns">
+        <button class="tog on" data-axis="match">Match background</button>
+        <button class="tog" data-axis="well">&minus;&Phi;</button>
+        <button class="tog" data-axis="delta">&delta;</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="inset">
+    <h3>Galaxy size vs. environment</h3>
+    <canvas id="scatter" width="560" height="340"></canvas>
+    <div class="rdo">
+      <span>r(size, &minus;&Phi;) = <b id="rWell">&mdash;</b></span>
+      <span>r(size, &delta;) = <b id="rDelta">&mdash;</b></span>
+    </div>
+  </div>
+
+  <div id="foot">
+    box <b id="fGal">&mdash;</b> galaxies in <b id="fHalo">&mdash;</b> halos ·
+    host: <b id="fHost">&mdash;</b>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* =====================================================================
+   Galaxy Size — LSS Correlation Explorer
+   Self-contained Canvas-2D toy model. A smooth large-scale density field
+   delta(x) is built from a handful of Fourier modes; the gravitational
+   potential follows from Poisson's equation (phi_k = -delta_k / k^2), so
+   the potential is dominated by the largest scales — the cosmic-web wells.
+   Host halos sit on density peaks; each hosts member galaxies whose sizes
+   are drawn log-normally and coupled to the large-scale environment of
+   their host plus a within-halo tidal-truncation term.
+   ===================================================================== */
+
+const TAU = Math.PI * 2;
+
+/* ---------- seeded RNG ---------- */
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function gaussian(rng){
+  // Box-Muller
+  let u = 0, v = 0;
+  while (u === 0) u = rng();
+  while (v === 0) v = rng();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(TAU * v);
+}
+
+/* ---------- state ---------- */
+const S = {
+  seed: 1234,
+  view: 'well',          // 'well' | 'delta'
+  amp: 1.0,
+  tilt: -0.6,
+  contours: true,
+  bwell: 0.30,
+  bdelta: 0.12,
+  tidal: 0.18,
+  scat: 0.14,
+  nhalo: 22,
+  nmem: 11,
+  exag: 1.4,
+  orbit: true,
+  showhalos: true,
+  axis: 'match',         // 'match' | 'well' | 'delta'
+  host: 0,
+};
+
+/* ---------- large-scale field ---------- */
+const NG = 168;                 // field grid resolution
+let deltaG = new Float32Array(NG * NG);
+let phiG   = new Float32Array(NG * NG);
+let dMean = 0, dStd = 1, pMean = 0, pStd = 1;
+let fieldImg = null;            // ImageData buffer for the heatmap
+
+function buildField(){
+  const rng = mulberry32(S.seed);
+  // Build a set of Fourier modes with a power-law-ish spectrum.
+  const modes = [];
+  const NMODE = 46;
+  for (let i = 0; i < NMODE; i++){
+    // integer wavenumbers in [-4,4], biased toward low k (large scales)
+    const kx = Math.round((rng() * 2 - 1) * 4);
+    const ky = Math.round((rng() * 2 - 1) * 4);
+    const k = Math.hypot(kx, ky);
+    if (k < 0.5) { i--; continue; }
+    // spectral shape: P(k) ~ k^tilt with a soft large-scale cut
+    const Pk = Math.pow(k, S.tilt) * Math.exp(-(k * k) / 60);
+    const A = Math.sqrt(Math.max(Pk, 0)) * gaussian(rng);
+    modes.push({ kx, ky, k, A, phase: rng() * TAU });
+  }
+  // Evaluate delta and phi on the grid. phi from Poisson: phi ~ -A/k^2.
+  let ds = 0, dss = 0, ps = 0, pss = 0;
+  for (let j = 0; j < NG; j++){
+    const y = j / NG;
+    for (let ii = 0; ii < NG; ii++){
+      const x = ii / NG;
+      let d = 0, p = 0;
+      for (let m = 0; m < modes.length; m++){
+        const mo = modes[m];
+        const arg = TAU * (mo.kx * x + mo.ky * y) + mo.phase;
+        const c = Math.cos(arg);
+        d += mo.A * c;
+        p += -(mo.A / (mo.k * mo.k)) * c;
+      }
+      const idx = j * NG + ii;
+      deltaG[idx] = d; phiG[idx] = p;
+      ds += d; dss += d * d; ps += p; pss += p * p;
+    }
+  }
+  const n = NG * NG;
+  dMean = ds / n; dStd = Math.sqrt(Math.max(dss / n - dMean * dMean, 1e-9));
+  pMean = ps / n; pStd = Math.sqrt(Math.max(pss / n - pMean * pMean, 1e-9));
+  placeHalos();
+  buildGalaxies();
+  buildFieldImage();
+}
+
+/* normalized field samplers (bilinear), returned as z-scores */
+function sampleHat(grid, mean, std, x, y){
+  // x,y in [0,1)
+  let fx = x * NG - 0.5, fy = y * NG - 0.5;
+  let i0 = Math.floor(fx), j0 = Math.floor(fy);
+  const tx = fx - i0, ty = fy - j0;
+  const wrap = v => ((v % NG) + NG) % NG;
+  const i1 = wrap(i0 + 1), j1 = wrap(j0 + 1);
+  i0 = wrap(i0); j0 = wrap(j0);
+  const a = grid[j0 * NG + i0], b = grid[j0 * NG + i1];
+  const c = grid[j1 * NG + i0], d = grid[j1 * NG + i1];
+  const v = a * (1 - tx) * (1 - ty) + b * tx * (1 - ty)
+          + c * (1 - tx) * ty + d * tx * ty;
+  return (v - mean) / std;
+}
+const deltaHat = (x, y) => sampleHat(deltaG, dMean, dStd, x, y);
+// "well depth" = -phi (positive inside potential wells)
+const wellHat  = (x, y) => -sampleHat(phiG, pMean, pStd, x, y);
+
+/* ---------- halos ---------- */
+let halos = [];
+function placeHalos(){
+  // Halos form preferentially in overdense regions. We rejection-sample
+  // positions with an acceptance probability that rises with the local
+  // overdensity, so halos cluster along filaments/nodes (as in the real
+  // cosmic web) while their environment still spans a useful range.
+  const rng = mulberry32(S.seed ^ 0x9e3779b9);
+  halos = [];
+  const maxTries = S.nhalo * 600;
+  let tries = 0;
+  while (halos.length < S.nhalo && tries < maxTries){
+    tries++;
+    const x = rng(), y = rng();
+    const dh = deltaHat(x, y);
+    const pacc = 1 / (1 + Math.exp(-(dh - 0.25) * 2.1)); // bias toward overdensity
+    if (rng() > pacc) continue;
+    let ok = true;                                        // soft anti-overlap
+    for (const h of halos){
+      if (Math.hypot(h.x - x, h.y - y) < 0.032){ ok = false; break; }
+    }
+    if (!ok) continue;
+    const mass = 0.6 + 1.6 / (1 + Math.exp(-dh * 1.4));   // more massive in peaks
+    halos.push({
+      id: halos.length,
+      x, y, mass,
+      rvir: 0.016 + 0.042 * Math.cbrt(mass),
+      wellHat: wellHat(x, y),
+      deltaHat: dh,
+      spin: (rng() * 2 - 1) * 0.6,
+    });
+  }
+  if (S.host >= halos.length) S.host = 0;
+}
+
+/* ---------- member galaxies ---------- */
+let galaxies = [];
+function buildGalaxies(){
+  galaxies = [];
+  const rng = mulberry32(S.seed ^ 0x5bd1e995);
+  for (const h of halos){
+    for (let m = 0; m < S.nmem; m++){
+      const rfrac = Math.pow(rng(), 0.65);        // concentrate toward centre
+      const ang0 = rng() * TAU;
+      const ecc = 0.55 + rng() * 0.4;             // orbit ellipticity
+      galaxies.push({
+        halo: h.id,
+        rfrac, ang0, ecc,
+        omega: (0.25 + rng() * 0.8) * (h.spin >= 0 ? 1 : -1),
+        tilt: rng() * TAU,                          // visual orientation
+        shape: 0.45 + rng() * 0.4,                  // axis ratio
+        noise: gaussian(rng),                       // intrinsic scatter draw
+        // cached per-frame
+        x: 0, y: 0, size: 1,
+      });
+    }
+  }
+}
+
+/* recompute galaxy sizes (cheap; runs when sliders change or fields rebuild) */
+function computeSizes(){
+  const R0 = 1.0;
+  for (const g of galaxies){
+    const h = halos[g.halo];
+    if (!h) continue;
+    // within-halo tidal term: central galaxies truncated (smaller)
+    const tidal = -S.tidal * (1 - g.rfrac);  // r small -> more negative
+    const logR = Math.log(R0)
+      + S.bwell  * h.wellHat
+      + S.bdelta * h.deltaHat
+      + tidal
+      + S.scat * g.noise;
+    g.size = Math.exp(logR);
+  }
+}
+
+/* ---------- canvas / view transform ---------- */
+const fieldCv = document.getElementById('field');
+const ctx = fieldCv.getContext('2d');
+let W = 0, H = 0, DPR = 1, side = 0, ox = 0, oy = 0;
+
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = fieldCv.clientWidth; H = fieldCv.clientHeight;
+  fieldCv.width = Math.round(W * DPR);
+  fieldCv.height = Math.round(H * DPR);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  side = Math.min(W, H) * 0.98;
+  ox = (W - side) / 2; oy = (H - side) / 2;
+}
+const PX = x => ox + x * side;
+const PY = y => oy + y * side;
+
+/* ---------- colormaps ---------- */
+function divergeColor(t){               // t in [-1,1]; cool(neg)->warm(pos)
+  t = Math.max(-1, Math.min(1, t));
+  if (t < 0){
+    const s = -t;                       // underdense / shallow -> deep blue
+    return [Math.round(8 + 18 * (1 - s)), Math.round(14 + 40 * (1 - s)),
+            Math.round(40 + 70 * s)];
+  }
+  const s = t;                          // overdense / deep well -> warm
+  const r = 40 + 215 * s, g = 30 + 110 * s * (1 - 0.4 * s), b = 60 * (1 - s);
+  return [Math.round(r), Math.round(g), Math.round(b)];
+}
+function sizeColor(rel){                // rel ~ size / median, mapped to amber<->cyan
+  const t = Math.max(0, Math.min(1, (rel - 0.6) / 1.0));
+  // small (t=0): cyan; large (t=1): amber
+  const c1 = [127, 216, 232], c2 = [255, 180, 84];
+  return [
+    Math.round(c1[0] + (c2[0] - c1[0]) * t),
+    Math.round(c1[1] + (c2[1] - c1[1]) * t),
+    Math.round(c1[2] + (c2[2] - c1[2]) * t),
+  ];
+}
+
+/* ---------- heatmap image ---------- */
+function buildFieldImage(){
+  fieldImg = ctx.createImageData(NG, NG);
+  const grid = S.view === 'well' ? phiG : deltaG;
+  const mean = S.view === 'well' ? pMean : dMean;
+  const std  = S.view === 'well' ? pStd  : dStd;
+  const sgn  = S.view === 'well' ? -1 : 1;   // show well depth (-phi) as positive
+  const d = fieldImg.data;
+  for (let p = 0; p < NG * NG; p++){
+    let z = sgn * (grid[p] - mean) / std;
+    const t = Math.tanh(z * 0.62 * S.amp);
+    const [r, g, b] = divergeColor(t);
+    d[p * 4] = r; d[p * 4 + 1] = g; d[p * 4 + 2] = b; d[p * 4 + 3] = 255;
+  }
+}
+
+// offscreen canvas to upscale the heatmap smoothly
+const off = document.createElement('canvas');
+off.width = NG; off.height = NG;
+const offCtx = off.getContext('2d');
+
+function drawField(){
+  ctx.fillStyle = '#04060c';
+  ctx.fillRect(0, 0, W, H);
+  if (fieldImg){
+    offCtx.putImageData(fieldImg, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.globalAlpha = 0.92;
+    ctx.drawImage(off, ox, oy, side, side);
+    ctx.globalAlpha = 1;
+  }
+  if (S.contours) drawContours();
+  // frame
+  ctx.strokeStyle = 'rgba(125,216,232,.18)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(ox, oy, side, side);
+}
+
+function drawContours(){
+  // simple iso-contours of the displayed field via marching over the grid
+  const grid = S.view === 'well' ? phiG : deltaG;
+  const mean = S.view === 'well' ? pMean : dMean;
+  const std  = S.view === 'well' ? pStd  : dStd;
+  const sgn  = S.view === 'well' ? -1 : 1;
+  ctx.lineWidth = 1;
+  const levels = [-1.2, -0.5, 0.5, 1.2, 1.9];
+  for (const lev of levels){
+    ctx.strokeStyle = lev > 0 ? 'rgba(255,180,84,.16)' : 'rgba(127,216,232,.13)';
+    ctx.beginPath();
+    const step = 2;
+    for (let j = 0; j < NG - step; j += step){
+      for (let i = 0; i < NG - step; i += step){
+        const z = (di, dj) => sgn * (grid[(j + dj) * NG + (i + di)] - mean) / std - lev;
+        const a = z(0, 0), b = z(step, 0), c = z(step, step), dd = z(0, step);
+        // mark cell as crossing if sign change among corners
+        const seg = (va, vb, ia, ja, ib, jb) => {
+          if ((va < 0) === (vb < 0)) return;
+          const t = va / (va - vb);
+          const x = (ia + (ib - ia) * t + 0.5) / NG;
+          const y = (ja + (jb - ja) * t + 0.5) / NG;
+          pts.push([PX(x), PY(y)]);
+        };
+        const pts = [];
+        seg(a, b, i, j, i + step, j);
+        seg(b, c, i + step, j, i + step, j + step);
+        seg(c, dd, i + step, j + step, i, j + step);
+        seg(dd, a, i, j + step, i, j);
+        if (pts.length >= 2){
+          ctx.moveTo(pts[0][0], pts[0][1]);
+          ctx.lineTo(pts[1][0], pts[1][1]);
+        }
+      }
+    }
+    ctx.stroke();
+  }
+}
+
+/* ---------- halos + galaxies ---------- */
+function drawHalos(t){
+  // halo disks
+  if (S.showhalos){
+    for (const h of halos){
+      const isHost = h.id === S.host;
+      const cx = PX(h.x), cy = PY(h.y), rr = h.rvir * side;
+      const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, rr);
+      if (isHost){
+        grd.addColorStop(0, 'rgba(255,180,84,.20)');
+        grd.addColorStop(1, 'rgba(255,180,84,0)');
+      } else {
+        grd.addColorStop(0, 'rgba(200,210,235,.10)');
+        grd.addColorStop(1, 'rgba(200,210,235,0)');
+      }
+      ctx.fillStyle = grd;
+      ctx.beginPath(); ctx.arc(cx, cy, rr, 0, TAU); ctx.fill();
+      ctx.strokeStyle = isHost ? 'rgba(255,180,84,.85)' : 'rgba(180,190,215,.28)';
+      ctx.lineWidth = isHost ? 1.6 : 1;
+      ctx.setLineDash(isHost ? [] : [3, 4]);
+      ctx.beginPath(); ctx.arc(cx, cy, rr, 0, TAU); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+  // median size for color normalization
+  let med = 1;
+  if (galaxies.length){
+    const arr = galaxies.map(g => g.size).sort((a, b) => a - b);
+    med = arr[arr.length >> 1] || 1;
+  }
+  // galaxies (orbit positions)
+  for (const g of galaxies){
+    const h = halos[g.halo];
+    if (!h) continue;
+    const isHost = h.id === S.host;
+    const ang = g.ang0 + (S.orbit ? g.omega * t : 0);
+    const rr = g.rfrac * h.rvir * side;
+    const gx = PX(h.x) + Math.cos(ang) * rr;
+    const gy = PY(h.y) + Math.sin(ang) * rr * g.ecc;
+    g.x = gx; g.y = gy;
+    const drawR = 2.2 * S.exag * Math.cbrt(g.size / med) * (isHost ? 1.18 : 1);
+    const [r, gg, b] = sizeColor(g.size / med);
+    ctx.save();
+    ctx.translate(gx, gy);
+    ctx.rotate(g.tilt);
+    ctx.globalAlpha = isHost ? 0.98 : 0.78;
+    ctx.fillStyle = `rgb(${r},${gg},${b})`;
+    if (isHost){ ctx.shadowColor = `rgb(${r},${gg},${b})`; ctx.shadowBlur = 7; }
+    ctx.beginPath();
+    ctx.ellipse(0, 0, drawR, drawR * g.shape, 0, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+  ctx.shadowBlur = 0;
+}
+
+/* ---------- scatter plot ---------- */
+const scCv = document.getElementById('scatter');
+const sx = scCv.getContext('2d');
+function pearson(xs, ys){
+  const n = xs.length; if (n < 3) return 0;
+  let mx = 0, my = 0;
+  for (let i = 0; i < n; i++){ mx += xs[i]; my += ys[i]; }
+  mx /= n; my /= n;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (let i = 0; i < n; i++){
+    const dx = xs[i] - mx, dy = ys[i] - my;
+    sxy += dx * dy; sxx += dx * dx; syy += dy * dy;
+  }
+  const den = Math.sqrt(sxx * syy);
+  return den > 1e-9 ? sxy / den : 0;
+}
+function drawScatter(){
+  const w = scCv.width, hh = scCv.height;
+  sx.clearRect(0, 0, w, hh);
+  sx.fillStyle = 'rgba(4,8,16,.6)';
+  sx.fillRect(0, 0, w, hh);
+  const pad = 30;
+  // axis choice
+  let axis = S.axis;
+  if (axis === 'match') axis = S.view;        // 'well' or 'delta'
+  const xv = [], yv = [];
+  for (const g of galaxies){
+    const h = halos[g.halo]; if (!h) continue;
+    xv.push(axis === 'well' ? h.wellHat : h.deltaHat);
+    yv.push(g.size);
+  }
+  if (!xv.length){ return; }
+  let xmin = Math.min(...xv), xmax = Math.max(...xv);
+  let ymin = Math.min(...yv), ymax = Math.max(...yv);
+  const xpad = (xmax - xmin) * 0.08 + 1e-3, ypad = (ymax - ymin) * 0.08 + 1e-3;
+  xmin -= xpad; xmax += xpad; ymin -= ypad; ymax += ypad;
+  const sxp = v => pad + (v - xmin) / (xmax - xmin) * (w - pad - 8);
+  const syp = v => hh - pad - (v - ymin) / (ymax - ymin) * (hh - pad - 8);
+  // axes
+  sx.strokeStyle = 'rgba(140,147,167,.4)'; sx.lineWidth = 1;
+  sx.beginPath();
+  sx.moveTo(pad, 8); sx.lineTo(pad, hh - pad); sx.lineTo(w - 8, hh - pad);
+  sx.stroke();
+  sx.fillStyle = 'rgba(140,147,167,.85)';
+  sx.font = "12px 'IBM Plex Mono', monospace";
+  sx.fillText(axis === 'well' ? 'large-scale well depth  -Φ' : 'large-scale density  δ',
+              pad + 4, hh - 9);
+  sx.save();
+  sx.translate(13, hh - pad - 4); sx.rotate(-Math.PI / 2);
+  sx.fillText('galaxy size R', 0, 0);
+  sx.restore();
+  // median for color
+  const arr = yv.slice().sort((a, b) => a - b);
+  const med = arr[arr.length >> 1] || 1;
+  // points
+  for (let i = 0; i < xv.length; i++){
+    const g = galaxies[i];
+    const isHost = g.halo === S.host;
+    const [r, gg, b] = sizeColor(yv[i] / med);
+    sx.globalAlpha = isHost ? 1 : 0.5;
+    sx.fillStyle = `rgb(${r},${gg},${b})`;
+    sx.beginPath();
+    sx.arc(sxp(xv[i]), syp(yv[i]), isHost ? 3.6 : 2.2, 0, TAU);
+    sx.fill();
+    if (isHost){
+      sx.strokeStyle = 'rgba(255,255,255,.7)'; sx.lineWidth = 1;
+      sx.stroke();
+    }
+  }
+  sx.globalAlpha = 1;
+  // best-fit line
+  const r = pearson(xv, yv);
+  const n = xv.length;
+  let mx = xv.reduce((a, b) => a + b, 0) / n;
+  let my = yv.reduce((a, b) => a + b, 0) / n;
+  let sxy = 0, sxx = 0;
+  for (let i = 0; i < n; i++){ sxy += (xv[i]-mx)*(yv[i]-my); sxx += (xv[i]-mx)**2; }
+  const slope = sxx > 1e-9 ? sxy / sxx : 0;
+  const b0 = my - slope * mx;
+  sx.strokeStyle = 'rgba(255,180,84,.9)'; sx.lineWidth = 1.6;
+  sx.beginPath();
+  sx.moveTo(sxp(xmin), syp(slope * xmin + b0));
+  sx.lineTo(sxp(xmax), syp(slope * xmax + b0));
+  sx.stroke();
+  return r;
+}
+
+/* ---------- readouts ---------- */
+function updateReadouts(){
+  const xvW = [], xvD = [], yv = [];
+  for (const g of galaxies){
+    const h = halos[g.halo]; if (!h) continue;
+    xvW.push(h.wellHat); xvD.push(h.deltaHat); yv.push(g.size);
+  }
+  const rW = pearson(xvW, yv), rD = pearson(xvD, yv);
+  document.getElementById('rWell').textContent = (rW >= 0 ? '+' : '') + rW.toFixed(2);
+  document.getElementById('rDelta').textContent = (rD >= 0 ? '+' : '') + rD.toFixed(2);
+  document.getElementById('fGal').textContent = galaxies.length;
+  document.getElementById('fHalo').textContent = halos.length;
+  document.getElementById('fHost').textContent = halos.length
+    ? '#' + S.host + '  (-Φ=' + halos[S.host].wellHat.toFixed(2)
+      + ', δ=' + halos[S.host].deltaHat.toFixed(2) + ')'
+    : '—';
+}
+
+/* ---------- main loop ---------- */
+let t0 = performance.now();
+function frame(now){
+  const t = (now - t0) / 1000;
+  computeSizes();
+  drawField();
+  drawHalos(t);
+  drawScatter();
+  updateReadouts();
+  requestAnimationFrame(frame);
+}
+
+/* ---------- UI wiring ---------- */
+function bindSlider(id, key, fmt, after){
+  const el = document.getElementById(id);
+  const out = document.getElementById('v' + id.charAt(0).toUpperCase() + id.slice(1));
+  const sync = () => {
+    S[key] = parseFloat(el.value);
+    if (out) out.textContent = fmt ? fmt(S[key]) : S[key];
+    if (after) after();
+  };
+  el.addEventListener('input', sync);
+  sync();
+}
+const f2 = v => (v >= 0 ? '+' : '') + v.toFixed(2);
+const f1 = v => v.toFixed(1);
+const fi = v => String(Math.round(v));
+
+bindSlider('amp', 'amp', f1, buildFieldImage);
+bindSlider('tilt', 'tilt', f2, buildField);
+bindSlider('bwell', 'bwell', f2);
+bindSlider('bdelta', 'bdelta', f2);
+bindSlider('tidal', 'tidal', f2);
+bindSlider('scat', 'scat', f2);
+bindSlider('nhalo', 'nhalo', fi, () => { placeHalos(); buildGalaxies(); });
+bindSlider('nmem', 'nmem', fi, buildGalaxies);
+bindSlider('exag', 'exag', f1);
+
+// view toggle
+document.querySelectorAll('#viewBtns .tog').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#viewBtns .tog').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    S.view = btn.dataset.view;
+    buildFieldImage();
+  });
+});
+// axis toggle
+document.querySelectorAll('#axisBtns .tog').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#axisBtns .tog').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    S.axis = btn.dataset.axis;
+  });
+});
+// simple toggles
+function flag(id, key){
+  const el = document.getElementById(id);
+  el.addEventListener('click', () => { S[key] = !S[key]; el.classList.toggle('on', S[key]); });
+}
+flag('contours', 'contours');
+flag('orbit', 'orbit');
+flag('showhalos', 'showhalos');
+
+document.getElementById('reseed').addEventListener('click', () => {
+  S.seed = (Math.random() * 1e9) | 0;
+  buildField();
+});
+
+// click to select host halo
+fieldCv.addEventListener('pointerdown', e => {
+  const rect = fieldCv.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  let best = -1, bestD = 1e9;
+  for (const h of halos){
+    const d = Math.hypot(PX(h.x) - mx, PY(h.y) - my);
+    if (d < bestD){ bestD = d; best = h.id; }
+  }
+  if (best >= 0 && bestD < side * 0.12) S.host = best;
+});
+
+document.getElementById('toggle').addEventListener('click', () => {
+  document.getElementById('panel').classList.toggle('open');
+});
+
+window.addEventListener('resize', resize);
+
+/* ---------- go ---------- */
+resize();
+buildField();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

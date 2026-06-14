@@ -15,6 +15,13 @@ space.
   whole physics pipeline runs client-side, so the controls respond in real time.
   Open `cosmic-web-sandbox/index.html` in a browser; no build step required.
   See its [README](cosmic-web-sandbox/README.md) for details.
+- **[galaxy-size-lss-correlation](galaxy-size-lss-correlation/)** — *Galaxy
+  Size — LSS Correlation Explorer*, an interactive toy model of how member
+  galaxy sizes inside dark-matter host halos correlate with the large-scale
+  gravitational potential well and density perturbations (the size analog of
+  intrinsic alignments). Open `galaxy-size-lss-correlation/index.html` in a
+  browser; no build step required.
+  See its [README](galaxy-size-lss-correlation/README.md) for details.
 
 ## License
 
