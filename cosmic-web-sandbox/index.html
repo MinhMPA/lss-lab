@@ -1,0 +1,1449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Tunable Universe — interactive cosmic web</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --space:#04060c;
+    --panel:rgba(10,14,26,0.82);
+    --line:#1d2742;
+    --ink:#e9e7dc;
+    --dim:#8b93a7;
+    --amber:#ffb454;
+    --cyan:#7fd8e8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:var(--space);color:var(--ink);
+    font-family:'Space Grotesk',sans-serif;}
+  canvas#scene{position:fixed;inset:0;display:block;cursor:grab}
+  canvas#scene:active{cursor:grabbing}
+
+  header{position:fixed;top:18px;left:22px;z-index:5;pointer-events:none;max-width:min(46ch,60vw)}
+  header h1{font-size:clamp(1.15rem,2.4vw,1.7rem);font-weight:700;letter-spacing:.01em}
+  header h1 em{font-style:normal;color:var(--amber)}
+  header p{font-size:.8rem;color:var(--dim);margin-top:4px;line-height:1.45}
+  header p strong{color:var(--cyan);font-weight:500}
+
+  /* ---------- control panel ---------- */
+  #panel{position:fixed;top:18px;right:18px;z-index:6;width:272px;
+    background:var(--panel);backdrop-filter:blur(10px);
+    border:1px solid var(--line);border-radius:10px;padding:16px 16px 12px;
+    max-height:calc(100% - 36px);overflow-y:auto}
+  #panel h2{font-size:.66rem;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--dim);font-weight:500;margin:14px 0 8px}
+  #panel h2:first-child{margin-top:0}
+  .ctl{margin-bottom:10px}
+  .ctl .row{display:flex;justify-content:space-between;align-items:baseline;font-size:.82rem}
+  .ctl .row .val{font-family:'IBM Plex Mono',monospace;font-size:.78rem;color:var(--cyan)}
+  .ctl input[type=range]{width:100%;margin-top:5px;-webkit-appearance:none;appearance:none;
+    height:3px;border-radius:2px;background:var(--line);outline:none}
+  .ctl input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+    width:14px;height:14px;border-radius:50%;background:var(--amber);
+    border:2px solid var(--space);cursor:pointer}
+  .ctl input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;
+    background:var(--amber);border:2px solid var(--space);cursor:pointer}
+  .ctl input[type=range]:focus-visible{outline:2px solid var(--cyan);outline-offset:4px}
+  .hint{font-size:.68rem;color:var(--dim);line-height:1.4;margin-top:2px}
+
+  .btnrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px}
+  button,select{font-family:'IBM Plex Mono',monospace;font-size:.7rem;color:var(--ink);
+    background:transparent;border:1px solid var(--line);border-radius:6px;
+    padding:5px 9px;cursor:pointer;transition:border-color .15s,color .15s}
+  button:hover{border-color:var(--amber);color:var(--amber)}
+  button:focus-visible,select:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+  button.primary{border-color:var(--amber);color:var(--amber)}
+  select{background:var(--panel)}
+  option{background:#0a0e1a}
+
+  #status{font-size:.68rem;font-family:'IBM Plex Mono',monospace;color:var(--amber);
+    min-height:1em;margin-top:8px;opacity:0;transition:opacity .2s}
+  #status.on{opacity:1}
+
+  /* ---------- P(k) inset ---------- */
+  #sliceBox{position:fixed;left:18px;top:96px;z-index:5;
+    background:var(--panel);backdrop-filter:blur(10px);
+    border:1px solid var(--line);border-radius:10px;padding:10px 12px 8px}
+  #sliceBox .cap{font-size:.64rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+  #slice{display:block;margin-top:5px;border-radius:4px;width:200px;height:200px}
+
+  #pk2Box{position:fixed;right:18px;bottom:78px;z-index:5;
+    background:var(--panel);backdrop-filter:blur(10px);
+    border:1px solid var(--line);border-radius:10px;padding:10px 12px 8px}
+  #pk2Box .cap{font-size:.64rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+  #pk2{display:block;margin-top:5px;border-radius:4px;width:180px;height:180px}
+
+  #pkbox{position:fixed;left:18px;bottom:18px;z-index:5;
+    background:var(--panel);backdrop-filter:blur(10px);
+    border:1px solid var(--line);border-radius:10px;padding:10px 12px 6px}
+  #pkbox .cap{font-size:.64rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+  #pk{display:block;margin-top:4px}
+
+  footer{position:fixed;right:18px;bottom:14px;z-index:4;text-align:right;
+    font-size:.66rem;color:var(--dim);line-height:1.5;max-width:46ch;pointer-events:none}
+  footer span{color:var(--ink)}
+
+  #togglePanel{display:none;position:fixed;top:14px;right:14px;z-index:7}
+
+  @media (max-width:760px){
+    header{max-width:70vw}
+    header p{display:none}
+    #togglePanel{display:block;background:var(--panel)}
+    #panel{top:auto;bottom:0;left:0;right:0;width:100%;border-radius:14px 14px 0 0;
+      max-height:55vh;transform:translateY(110%);transition:transform .25s}
+    #panel.open{transform:translateY(0)}
+    #pkbox{display:none}
+    #pk2Box{display:none !important}
+    #sliceBox{display:none !important}
+    footer{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){ :root{--autorotate:0} }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>The <em>Tunable</em> Universe</h1>
+  <p>One random seed, many possible universes. <strong>Drag the dials</strong> and watch the
+     same cosmic web respond to different physics. Drag to rotate &middot; scroll or pinch to zoom.</p>
+</header>
+
+<button id="togglePanel">Controls</button>
+
+<aside id="panel">
+  <h2>Universe ingredients</h2>
+
+  <div class="ctl">
+    <div class="row"><label for="om">Matter density &Omega;<sub>m</sub></label><span class="val" id="omVal"></span></div>
+    <input type="range" id="om" min="0.10" max="0.60" step="0.005" value="0.315">
+    <div class="hint">More matter &rarr; stronger gravity, more small-scale structure</div>
+  </div>
+
+  <div class="ctl">
+    <div class="row"><label for="s8">Clumpiness &sigma;<sub>8</sub></label><span class="val" id="s8Val"></span></div>
+    <input type="range" id="s8" min="0.30" max="1.50" step="0.005" value="0.811">
+    <div class="hint">Amplitude of fluctuations &mdash; smooth sea vs. dense knots</div>
+  </div>
+
+  <div class="ctl">
+    <div class="row"><label for="ns">Spectral tilt n<sub>s</sub></label><span class="val" id="nsVal"></span></div>
+    <input type="range" id="ns" min="0.70" max="1.30" step="0.005" value="0.965">
+    <div class="hint">&lt;1 favours large structures, &gt;1 favours small ones</div>
+  </div>
+
+
+  <h2>Views</h2>
+  <div class="btnrow">
+    <button data-render="splat" class="primary">Splats</button>
+    <button data-render="volume">Volume</button>
+  </div>
+  <div class="btnrow" style="margin-top:6px">
+    <button id="sliceToggle">Matter 2D slice (inset)</button>
+    <button id="haloToggle">Halos</button>
+    <button id="galToggle">Galaxies (HOD)</button>
+  </div>
+  <div class="hint" id="haloInfo">Proxy halos = density peaks; galaxies via Zheng et al. (2004) HOD model. Cluster-scale here.</div>
+  <div class="ctl" style="margin-top:8px">
+    <div class="row"><label for="hmin">HOD log M<sub>min</sub></label><span class="val" id="hminVal"></span></div>
+    <input type="range" id="hmin" min="13.0" max="14.8" step="0.05" value="13.8">
+  </div>
+  <div class="ctl">
+    <div class="row"><label for="hm1">HOD log M<sub>1</sub></label><span class="val" id="hm1Val"></span></div>
+    <input type="range" id="hm1" min="13.8" max="15.6" step="0.05" value="15.0">
+  </div>
+  <div class="ctl">
+    <div class="row"><label for="hal">satellite slope &alpha;</label><span class="val" id="halVal"></span></div>
+    <input type="range" id="hal" min="0.4" max="1.6" step="0.05" value="1.0">
+  </div>
+
+  <h2>Power spectrum</h2>
+  <div class="btnrow">
+    <button id="pkMatter">Matter</button>
+    <button id="pkHalos">Halos</button>
+    <button id="pkGals">Galaxies</button>
+    <button id="pk2D">2D P(k) (inset)</button>
+  </div>
+  <div class="hint">Measured P(k) from the box (dots) vs linear input (line). Halos/galaxies show bias and shot noise.</div>
+
+  <h2>Cosmic time</h2>
+  <div class="ctl">
+    <div class="row"><label for="aexp">Scale factor a</label><span class="val" id="aVal"></span></div>
+    <input type="range" id="aexp" min="0.05" max="1.0" step="0.005" value="1.0">
+    <div class="hint" id="zHint"></div>
+  </div>
+  <div class="btnrow">
+    <button id="play" class="primary">&#9654; Grow the universe</button>
+  </div>
+
+  <h2>Cosmology presets</h2>
+  <div class="btnrow">
+    <button data-preset="planck">Planck 2018</button>
+    <button data-preset="highom">Matter-heavy</button>
+    <button data-preset="lows8">Smooth</button>
+    <button data-preset="blue">Blue tilt</button>
+  </div>
+
+  <h2>Simulation configurations</h2>
+  <div class="btnrow">
+    <button data-order="1" class="primary">1LPT</button>
+    <button data-order="2">2LPT</button>
+  </div>
+  <div class="hint" id="orderHint">Displacement model. 2LPT sharpens filaments and knots.</div>
+  <div class="btnrow" style="margin-top:8px">
+    <button data-rsd="off" class="primary">Real space</button>
+    <button data-rsd="x">RSD x</button>
+    <button data-rsd="y">RSD y</button>
+    <button data-rsd="z">RSD z</button>
+  </div>
+  <div class="hint">Redshift space: infall stretches structure along the line of sight (Kaiser).</div>
+  <div class="btnrow" style="margin-top:8px">
+    <button id="reseed">&#10227; New realization</button>
+    <select id="res" aria-label="Resolution">
+      <option value="32">32&sup3; &mdash; fast</option>
+      <option value="64" selected>64&sup3; &mdash; default</option>
+      <option value="128">128&sup3; &mdash; slow, desktop</option>
+    </select>
+  </div>
+  <div class="hint">Fixed seed across parameters &mdash; same phases, as in the AbacusSummit movie.</div>
+
+  <div id="status"></div>
+</aside>
+
+<div id="pk2Box" style="display:none">
+  <div class="cap" id="pk2Cap">2D P(k)</div>
+  <canvas id="pk2" width="240" height="240"></canvas>
+</div>
+
+<div id="sliceBox" style="display:none">
+  <div class="cap" id="sliceCap">matter slice</div>
+  <canvas id="slice" width="240" height="240"></canvas>
+</div>
+
+<div id="pkbox">
+  <div class="cap">Linear matter power spectrum</div>
+  <canvas id="pk" width="240" height="150"></canvas>
+</div>
+
+<footer>
+  <span id="boxinfo"></span><br>
+  Lagrangian perturbation theory (1LPT / 2LPT) &middot; Eisenstein&ndash;Hu (1998) transfer function &middot; flat &Lambda;CDM<br>
+  Inspired by the Planck CMB Simulator and the AbacusSummit Many Universes movie
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+/* =====================================================================
+ * The Tunable Universe
+ * ---------------------------------------------------------------------
+ * Physics pipeline (all in the browser):
+ *   1. Draw a unit Gaussian white-noise field w(q) on an N^3 grid
+ *      with a fixed seed ("matched phases").
+ *   2. FFT once: w(k).
+ *   3. For the chosen (Omega_m, n_s): build the linear power spectrum
+ *      P(k) = A k^ns T^2(k) with the Eisenstein-Hu (1998) no-wiggle
+ *      transfer function, normalized so that sigma_8 = 1.
+ *   4. delta(k) = w(k) sqrt(P(k)/V_cell);  Psi_i(k) = i k_i/k^2 delta(k).
+ *      Three inverse FFTs give the Zel'dovich displacement field, one
+ *      more gives delta(q) used for coloring.
+ *   5. Particles: x = q + amp * Psi(q), with amp = sigma_8 * D(a)/D(1)
+ *      applied as a GPU uniform -> the sigma_8 and time sliders run at
+ *      60 fps with zero recomputation. Only Omega_m / n_s changes
+ *      trigger the FFT path, followed by a smooth morph between the
+ *      old and new displacement fields ("kinetic" transitions).
+ * ===================================================================== */
+
+/* ------------------------- parameters ------------------------------ */
+const BOX = 250.0;                 // Mpc/h
+const OB  = 0.049;                 // Omega_b, fixed
+const H0  = 0.674;                 // h, default (now adjustable via slider)
+const MORPH_MS = 900;
+
+const state = {
+  om: 0.315, s8: 0.811, ns: 0.965, a: 1.0,
+  N: 64, seed: 12345, order: 1,
+  rsd: 'off', showSlice: false,
+  showHalos: false, showGals: false,
+  render: 'splat',
+  pkMatter: false, pkHalos: false, pkGals: false, pk2D: false,
+  hodMmin: 13.8, hodM1: 15.0, hodAlpha: 1.0,
+  playing: false,
+};
+
+/* --------------------- seeded Gaussian RNG ------------------------- */
+function mulberry32(seed){
+  let t = seed >>> 0;
+  return function(){
+    t += 0x6D2B79F5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function fillGaussian(arr, seed){
+  const rnd = mulberry32(seed);
+  const n = arr.length;
+  for (let i = 0; i < n; i += 2){
+    const u1 = Math.max(rnd(), 1e-12), u2 = rnd();
+    const r = Math.sqrt(-2*Math.log(u1)), th = 2*Math.PI*u2;
+    arr[i] = r*Math.cos(th);
+    if (i+1 < n) arr[i+1] = r*Math.sin(th);
+  }
+}
+
+/* ------------------------ in-place FFT ----------------------------- */
+/* Radix-2 complex FFT along one strided line. inverse=true divides by n. */
+function fftLine(re, im, n, off, stride, inverse){
+  for (let i = 1, j = 0; i < n; i++){
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j){
+      const a = off + i*stride, b = off + j*stride;
+      let t = re[a]; re[a] = re[b]; re[b] = t;
+      t = im[a]; im[a] = im[b]; im[b] = t;
+    }
+  }
+  for (let len = 2; len <= n; len <<= 1){
+    const ang = (inverse ? 2 : -2) * Math.PI / len;
+    const wr = Math.cos(ang), wi = Math.sin(ang);
+    const half = len >> 1;
+    for (let i = 0; i < n; i += len){
+      let cr = 1, ci = 0;
+      for (let k = 0; k < half; k++){
+        const a = off + (i+k)*stride, b = off + (i+k+half)*stride;
+        const br = re[b]*cr - im[b]*ci;
+        const bi = re[b]*ci + im[b]*cr;
+        re[b] = re[a] - br; im[b] = im[a] - bi;
+        re[a] += br;        im[a] += bi;
+        const nr = cr*wr - ci*wi; ci = cr*wi + ci*wr; cr = nr;
+      }
+    }
+  }
+  if (inverse){
+    for (let i = 0; i < n; i++){ re[off+i*stride] /= n; im[off+i*stride] /= n; }
+  }
+}
+/* Full 3D transform; index convention idx = (iz*N + iy)*N + ix. */
+function fft3d(re, im, N, inverse){
+  const N2 = N*N;
+  for (let z = 0; z < N; z++)            // along x
+    for (let y = 0; y < N; y++)
+      fftLine(re, im, N, (z*N + y)*N, 1, inverse);
+  for (let z = 0; z < N; z++)            // along y
+    for (let x = 0; x < N; x++)
+      fftLine(re, im, N, z*N2 + x, N, inverse);
+  for (let y = 0; y < N; y++)            // along z
+    for (let x = 0; x < N; x++)
+      fftLine(re, im, N, y*N + x, N2, inverse);
+}
+
+/* --------------- Eisenstein-Hu (1998) no-wiggle T(k) --------------- */
+function makeTransfer(om){
+  const h = H0, omh2 = om*h*h, obh2 = OB*h*h, fb = OB/om;
+  const theta2 = Math.pow(2.7255/2.7, 2);
+  const s = 44.5*Math.log(9.83/omh2) / Math.sqrt(1 + 10*Math.pow(obh2, 0.75));
+  const aG = 1 - 0.328*Math.log(431*omh2)*fb + 0.38*Math.log(22.3*omh2)*fb*fb;
+  return function T(k){                  // k in h/Mpc
+    const ks = k*h*s;
+    const gEff = om*h*(aG + (1-aG)/(1 + Math.pow(0.43*ks, 4)));
+    const q = k*theta2/gEff;
+    const L = Math.log(2*Math.E + 1.8*q);
+    const C = 14.2 + 731/(1 + 62.5*q);
+    return L/(L + C*q*q);
+  };
+}
+/* Unnormalized P(k); normalization fixed by the sigma_8 integral. */
+function makePk(om, ns){
+  const T = makeTransfer(om);
+  const Praw = k => Math.pow(k, ns)*T(k)*T(k);
+  // sigma^2(R=8) = 1/(2 pi^2) Int k^2 P W^2(kR) dk  (log-spaced trapezoid)
+  const R = 8.0, nInt = 400, lk0 = Math.log(1e-4), lk1 = Math.log(50);
+  let sig2 = 0;
+  for (let i = 0; i < nInt; i++){
+    const lk = lk0 + (lk1 - lk0)*(i + 0.5)/nInt;
+    const k = Math.exp(lk), x = k*R;
+    const W = 3*(Math.sin(x) - x*Math.cos(x))/(x*x*x);
+    sig2 += k*k*k*Praw(k)*W*W;           // extra k from dk = k dlnk
+  }
+  sig2 *= (lk1 - lk0)/nInt/(2*Math.PI*Math.PI);
+  const A = 1/sig2;                      // => sigma_8 = 1
+  return k => A*Praw(k);
+}
+
+/* ------------- growth factor D(a), Carroll et al. 1992 ------------- */
+function growth(a, om){
+  const oma = om/(om + (1 - om)*a*a*a);  // flat LCDM
+  const ola = 1 - oma;
+  const g = 2.5*oma/(Math.pow(oma, 4/7) - ola + (1 + oma/2)*(1 + ola/70));
+  return a*g;
+}
+const growthNorm = (a, om) => growth(a, om)/growth(1, om);
+
+/* ----------------------- field generation -------------------------- */
+let G = null;   // grid bundle: noise spectrum + scratch arrays
+
+function buildGrid(N, seed){
+  const M = N*N*N;
+  const wr = new Float32Array(M), wi = new Float32Array(M);
+  fillGaussian(wr, seed);
+  fft3d(wr, wi, N, false);               // w(k), exactly Hermitian
+  G = {
+    N, M,
+    wkRe: wr, wkIm: wi,
+    re: [new Float32Array(M), new Float32Array(M), new Float32Array(M), new Float32Array(M)],
+    im: [new Float32Array(M), new Float32Array(M), new Float32Array(M), new Float32Array(M)],
+  };
+}
+
+/* delta + LPT displacements for (om, ns) at chosen order; writes out arrays.
+   order=1: Zel'dovich.  order=2: adds the 2LPT second-order term into outDisp2.
+   Fields are stored at sigma_8 = 1, D = 1; growth amplitudes applied in shader. */
+function computeFields(om, ns, order, outDisp, outDelta, outDisp2, outI2, outI3){
+  const { N, wkRe, wkIm, re, im, M } = G;
+  const Pk = makePk(om, ns);
+  const kf = 2*Math.PI/BOX, half = N >> 1;
+  const cellNorm = Math.sqrt(N*N*N/(BOX*BOX*BOX));   // 1/sqrt(V_cell)
+  const [dRe, xRe, yRe, zRe] = re, [dIm, xIm, yIm, zIm] = im;
+  const isNyq = (fx,fy,fz) =>
+    (Math.abs(fx)===half || Math.abs(fy)===half || Math.abs(fz)===half) ? 0 : 1;
+
+  // ---- delta(k) and first-order Psi1(k) = i k/k^2 delta ----
+  let idx = 0;
+  for (let iz = 0; iz < N; iz++){
+    const fz = iz <= half ? iz : iz - N, kz = kf*fz;
+    for (let iy = 0; iy < N; iy++){
+      const fy = iy <= half ? iy : iy - N, ky = kf*fy;
+      for (let ix = 0; ix < N; ix++, idx++){
+        const fx = ix <= half ? ix : ix - N, kx = kf*fx;
+        const k2 = kx*kx + ky*ky + kz*kz;
+        if (k2 === 0){
+          dRe[idx]=dIm[idx]=xRe[idx]=xIm[idx]=yRe[idx]=yIm[idx]=zRe[idx]=zIm[idx]=0;
+          continue;
+        }
+        const amp = Math.sqrt(Pk(Math.sqrt(k2)))*cellNorm;
+        const drr = wkRe[idx]*amp, dii = wkIm[idx]*amp;   // delta(k)
+        dRe[idx] = drr; dIm[idx] = dii;
+        const ny = isNyq(fx,fy,fz);                       // Hermitian: zero Nyquist
+        const cx = ny*kx/k2, cy = ny*ky/k2, cz = ny*kz/k2;
+        xRe[idx] = -dii*cx; xIm[idx] = drr*cx;
+        yRe[idx] = -dii*cy; yIm[idx] = drr*cy;
+        zRe[idx] = -dii*cz; zIm[idx] = drr*cz;
+      }
+    }
+  }
+
+  // ---- second order: Psi2 from the 2LPT source (needs k-space delta) ----
+  const dkRe = dRe.slice(), dkIm = dIm.slice();          // save delta(k)
+  if (order >= 2){
+    // phi^(1)_,ij(k) = (k_i k_j / k^2) delta(k)  -> 6 inverse FFTs
+    const comps = [[0,0],[1,1],[2,2],[0,1],[0,2],[1,2]];
+    const phi = [];
+    for (const [a, b] of comps){
+      const rr = new Float32Array(M), ii = new Float32Array(M);
+      let id = 0;
+      for (let iz = 0; iz < N; iz++){
+        const fz = iz <= half ? iz : iz - N, k2c = kf*fz;
+        for (let iy = 0; iy < N; iy++){
+          const fy = iy <= half ? iy : iy - N, k1c = kf*fy;
+          for (let ix = 0; ix < N; ix++, id++){
+            const fx = ix <= half ? ix : ix - N, k0c = kf*fx;
+            const k2 = k0c*k0c + k1c*k1c + k2c*k2c;
+            if (k2 === 0) continue;
+            const ka = a===0?k0c:a===1?k1c:k2c;
+            const kb = b===0?k0c:b===1?k1c:k2c;
+            const f = isNyq(fx,fy,fz)*ka*kb/k2;
+            rr[id] = dkRe[id]*f; ii[id] = dkIm[id]*f;
+          }
+        }
+      }
+      fft3d(rr, ii, N, true);
+      phi.push(rr);
+    }
+    const [pxx,pyy,pzz,pxy,pxz,pyz] = phi;
+    // source s = sum_{i<j} (phi_,ii phi_,jj - phi_,ij^2)
+    const sRe = new Float32Array(M), sIm = new Float32Array(M);
+    for (let i = 0; i < M; i++)
+      sRe[i] = pxx[i]*pyy[i] + pxx[i]*pzz[i] + pyy[i]*pzz[i]
+             - pxy[i]*pxy[i] - pxz[i]*pxz[i] - pyz[i]*pyz[i];
+    fft3d(sRe, sIm, N, false);                             // s(k)
+    // Psi2(k) = + i k/k^2 s(k)   (sign verified by density-skewness test)
+    const u = [new Float32Array(M), new Float32Array(M), new Float32Array(M)];
+    const ui = [new Float32Array(M), new Float32Array(M), new Float32Array(M)];
+    let id = 0;
+    for (let iz = 0; iz < N; iz++){
+      const fz = iz <= half ? iz : iz - N, kz = kf*fz;
+      for (let iy = 0; iy < N; iy++){
+        const fy = iy <= half ? iy : iy - N, ky = kf*fy;
+        for (let ix = 0; ix < N; ix++, id++){
+          const fx = ix <= half ? ix : ix - N, kx = kf*fx;
+          const k2 = kx*kx + ky*ky + kz*kz;
+          if (k2 === 0) continue;
+          const ny = isNyq(fx,fy,fz), sr = sRe[id], si = sIm[id];
+          const cx = ny*kx/k2, cy = ny*ky/k2, cz = ny*kz/k2;
+          u[0][id] = -si*cx; ui[0][id] = sr*cx;
+          u[1][id] = -si*cy; ui[1][id] = sr*cy;
+          u[2][id] = -si*cz; ui[2][id] = sr*cz;
+        }
+      }
+    }
+    for (let c = 0; c < 3; c++) fft3d(u[c], ui[c], N, true);
+    for (let i = 0; i < M; i++){
+      outDisp2[3*i]   = u[0][i];
+      outDisp2[3*i+1] = u[1][i];
+      outDisp2[3*i+2] = u[2][i];
+    }
+  } else if (outDisp2){
+    outDisp2.fill(0);
+  }
+
+  // ---- deformation-tensor invariants for Jacobian-density coloring ----
+  // A_ij(k) = -(k_i k_j/k^2) delta(k); I1 = tr A = -delta (used in shader),
+  // here we form I2 (sum of principal 2x2 minors) and I3 = det A. No Nyquist
+  // zeroing needed: the symmetric (even-in-k) tensor is already Hermitian.
+  if (outI2){
+    const comps = [[0,0],[1,1],[2,2],[0,1],[0,2],[1,2]];
+    const A = [];
+    for (const [a, b] of comps){
+      const rr = new Float32Array(M), ii = new Float32Array(M);
+      let id = 0;
+      for (let iz = 0; iz < N; iz++){
+        const fz = iz <= half ? iz : iz - N, kcz = kf*fz;
+        for (let iy = 0; iy < N; iy++){
+          const fy = iy <= half ? iy : iy - N, kcy = kf*fy;
+          for (let ix = 0; ix < N; ix++, id++){
+            const fx = ix <= half ? ix : ix - N, kcx = kf*fx;
+            const k2 = kcx*kcx + kcy*kcy + kcz*kcz;
+            if (k2 === 0) continue;
+            const ka = a===0?kcx:a===1?kcy:kcz, kb = b===0?kcx:b===1?kcy:kcz;
+            const f = -ka*kb/k2;                 // A_ij = -(k_i k_j/k^2) delta
+            rr[id] = dkRe[id]*f; ii[id] = dkIm[id]*f;
+          }
+        }
+      }
+      fft3d(rr, ii, N, true);
+      A.push(rr);
+    }
+    const [axx,ayy,azz,axy,axz,ayz] = A;
+    for (let i = 0; i < M; i++){
+      outI2[i] = axx[i]*ayy[i] + axx[i]*azz[i] + ayy[i]*azz[i]
+               - axy[i]*axy[i] - axz[i]*axz[i] - ayz[i]*ayz[i];
+      outI3[i] = axx[i]*(ayy[i]*azz[i] - ayz[i]*ayz[i])
+               - axy[i]*(axy[i]*azz[i] - ayz[i]*axz[i])
+               + axz[i]*(axy[i]*ayz[i] - ayy[i]*axz[i]);
+    }
+  }
+
+  // ---- inverse FFT the first-order block and write outputs ----
+  for (let f = 0; f < 4; f++) fft3d(re[f], im[f], N, true);
+  for (let i = 0; i < M; i++){
+    outDelta[i]      = dRe[i];
+    outDisp[3*i]     = xRe[i];
+    outDisp[3*i + 1] = yRe[i];
+    outDisp[3*i + 2] = zRe[i];
+  }
+}
+
+/* --------------------------- three.js ------------------------------ */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.domElement.id = 'scene';
+document.body.prepend(renderer.domElement);
+
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color(0x04060c);
+const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 1, 6000);
+
+const uniforms = {
+  uMix:  { value: 1.0 },
+  uD1:   { value: 1.0 },   // first-order growth: sigma8 * D(a)/D(1)
+  uD2:   { value: 0.0 },   // second-order: (3/7) D1^2 Om^-1/143
+  uF1:   { value: 0.0 },   // growth rate f1 (RSD enhancement, 1st order)
+  uF2:   { value: 0.0 },   // growth rate f2 ~ 2 f1 (RSD, 2nd order)
+  uLOS:  { value: new THREE.Vector3(0,0,0) },  // redshift-space axis (0 = off)
+  uSize: { value: 1.0 },
+  uBox:  { value: BOX },
+};
+
+const vert = `
+  uniform float uMix, uD1, uD2, uF1, uF2, uSize, uBox;
+  uniform vec3 uLOS;
+  attribute vec3 disp0;  attribute vec3 disp1;
+  attribute vec3 d2a;    attribute vec3 d2b;
+  attribute float delta0; attribute float delta1;
+  attribute float inv2;  attribute float inv3;
+  varying float vT;
+  void main(){
+    vec3 p1  = mix(disp0, disp1, uMix);          // first-order displacement
+    vec3 p2  = mix(d2a,   d2b,   uMix);          // second-order displacement
+    vec3 d   = uD1*p1 + uD2*p2;
+    // redshift-space distortion: enhance line-of-sight displacement by f
+    d += (uF1*uD1*dot(p1,uLOS) + uF2*uD2*dot(p2,uLOS)) * uLOS;
+    vec3 p   = mod(position + d, uBox) - 0.5*uBox;
+    vec4 mv  = modelViewMatrix * vec4(p, 1.0);
+    // Jacobian (single-stream) density: 1+delta = 1/det(I + D1 A),
+    // det = 1 + D1*I1 + D1^2*I2 + D1^3*I3, with I1 = -delta_lin
+    float I1 = -mix(delta0, delta1, uMix);
+    float det = 1.0 + uD1*I1 + uD1*uD1*inv2 + uD1*uD1*uD1*inv3;
+    float rho = 1.0 / max(abs(det), 0.04);       // caustics saturate bright
+    vT = clamp(0.16*log(rho) + 0.5, 0.0, 1.0);   // log-density -> color/size
+    // adaptive smoothing length h ~ (1+delta)^(-1/3) = |det|^(1/3):
+    // voids get large soft kernels that fill the field, knots stay small + sharp
+    float h = clamp(pow(abs(det), 0.3333), 0.32, 2.3);
+    gl_PointSize = uSize * (3.6*h + 1.0) * (420.0 / -mv.z);
+    gl_Position  = projectionMatrix * mv;
+  }`;
+const frag = `
+  precision mediump float;
+  varying float vT;
+  vec3 ramp(float t){
+    vec3 c0 = vec3(0.02,0.04,0.13);
+    vec3 c1 = vec3(0.05,0.20,0.42);
+    vec3 c2 = vec3(0.12,0.52,0.66);
+    vec3 c3 = vec3(0.97,0.66,0.30);
+    vec3 c4 = vec3(1.00,0.97,0.90);
+    if (t < 0.25) return mix(c0, c1, t*4.0);
+    if (t < 0.50) return mix(c1, c2, (t-0.25)*4.0);
+    if (t < 0.75) return mix(c2, c3, (t-0.50)*4.0);
+    return mix(c3, c4, (t-0.75)*4.0);
+  }
+  void main(){
+    vec2 uv = gl_PointCoord*2.0 - 1.0;
+    float r2 = dot(uv, uv);
+    if (r2 > 1.0) discard;
+    float fall = exp(-2.6*r2);                   // soft Gaussian kernel
+    float a = fall*(0.13 + 0.95*vT*vT);          // dense cores brighter
+    gl_FragColor = vec4(ramp(vT)*a*1.25, a);
+  }`;
+
+let points = null, geo = null;
+
+function buildGeometry(){
+  if (points){ scene.remove(points); geo.dispose(); }
+  const N = state.N, M = N*N*N, cell = BOX/N;
+  const pos = new Float32Array(3*M);
+  let idx = 0;
+  for (let iz = 0; iz < N; iz++)
+    for (let iy = 0; iy < N; iy++)
+      for (let ix = 0; ix < N; ix++, idx++){
+        pos[3*idx]   = (ix + 0.5)*cell;
+        pos[3*idx+1] = (iy + 0.5)*cell;
+        pos[3*idx+2] = (iz + 0.5)*cell;
+      }
+  geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('disp0',  new THREE.BufferAttribute(new Float32Array(3*M), 3));
+  geo.setAttribute('disp1',  new THREE.BufferAttribute(new Float32Array(3*M), 3));
+  geo.setAttribute('d2a',    new THREE.BufferAttribute(new Float32Array(3*M), 3));
+  geo.setAttribute('d2b',    new THREE.BufferAttribute(new Float32Array(3*M), 3));
+  geo.setAttribute('delta0', new THREE.BufferAttribute(new Float32Array(M), 1));
+  geo.setAttribute('delta1', new THREE.BufferAttribute(new Float32Array(M), 1));
+  geo.setAttribute('inv2',   new THREE.BufferAttribute(new Float32Array(M), 1));
+  geo.setAttribute('inv3',   new THREE.BufferAttribute(new Float32Array(M), 1));
+
+  const mat = new THREE.ShaderMaterial({
+    uniforms, vertexShader: vert, fragmentShader: frag,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  points = new THREE.Points(geo, mat);
+  points.frustumCulled = false;
+  points.visible = state.render !== 'volume';
+  scene.add(points);
+  uniforms.uSize.value = state.N >= 128 ? 0.55 : (state.N >= 64 ? 1.0 : 1.9);
+}
+
+/* ------------------------ morph machinery -------------------------- */
+let morphT0 = -1;
+const easeInOut = t => t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3)/2;
+
+/* Collapse a morph pair to its current displayed state in slot 0. */
+function freezePair(a0, a1, m){
+  if (m >= 1){ a0.array.set(a1.array); }
+  else { const x = a0.array, y = a1.array;
+    for (let i = 0; i < x.length; i++) x[i] += (y[i] - x[i])*m; }
+}
+
+function pushNewFields(){
+  const m = uniforms.uMix.value;
+  const d0 = geo.attributes.disp0, d1 = geo.attributes.disp1;
+  const f0 = geo.attributes.d2a,   f1 = geo.attributes.d2b;
+  const e0 = geo.attributes.delta0, e1 = geo.attributes.delta1;
+  const i2 = geo.attributes.inv2,   i3 = geo.attributes.inv3;
+  freezePair(d0, d1, m); freezePair(f0, f1, m); freezePair(e0, e1, m);
+  computeFields(state.om, state.ns, state.order,
+                d1.array, e1.array, f1.array, i2.array, i3.array);
+  d0.needsUpdate = d1.needsUpdate = f0.needsUpdate = f1.needsUpdate =
+    e0.needsUpdate = e1.needsUpdate = i2.needsUpdate = i3.needsUpdate = true;
+  uniforms.uMix.value = 0;
+  morphT0 = performance.now();
+  refreshProducts();
+}
+
+/* ------------------------ orbit controls --------------------------- */
+const cam = { theta: 0.6, phi: 1.15, r: BOX*1.7, vTheta: 0, lastUser: 0 };
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let dragging = false, px = 0, py = 0, pinchD = 0;
+
+function applyCamera(){
+  cam.phi = Math.min(Math.max(cam.phi, 0.08), Math.PI - 0.08);
+  cam.r   = Math.min(Math.max(cam.r, BOX*0.32), BOX*4.5);
+  camera.position.set(
+    cam.r*Math.sin(cam.phi)*Math.cos(cam.theta),
+    cam.r*Math.cos(cam.phi),
+    cam.r*Math.sin(cam.phi)*Math.sin(cam.theta));
+  camera.lookAt(0, 0, 0);
+}
+const el = renderer.domElement;
+el.addEventListener('pointerdown', e => {
+  dragging = true; px = e.clientX; py = e.clientY;
+  cam.lastUser = performance.now(); el.setPointerCapture(e.pointerId);
+});
+el.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  cam.theta += (e.clientX - px)*0.005;
+  cam.phi   -= (e.clientY - py)*0.005;
+  px = e.clientX; py = e.clientY; cam.lastUser = performance.now();
+});
+el.addEventListener('pointerup',   () => dragging = false);
+el.addEventListener('pointercancel', () => dragging = false);
+el.addEventListener('wheel', e => {
+  e.preventDefault();
+  cam.r *= Math.exp(e.deltaY*0.0012);
+  cam.lastUser = performance.now();
+}, { passive: false });
+el.addEventListener('touchstart', e => {
+  if (e.touches.length === 2)
+    pinchD = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY);
+}, { passive: true });
+el.addEventListener('touchmove', e => {
+  if (e.touches.length === 2){
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                         e.touches[0].clientY - e.touches[1].clientY);
+    if (pinchD > 0) cam.r *= pinchD/d;
+    pinchD = d; cam.lastUser = performance.now();
+  }
+}, { passive: true });
+
+/* ----------------------------- UI ---------------------------------- */
+const $ = id => document.getElementById(id);
+const sliders = { om: $('om'), s8: $('s8'), ns: $('ns'), a: $('aexp') };
+const status = $('status');
+
+function setStatus(msg){
+  status.textContent = msg || '';
+  status.classList.toggle('on', !!msg);
+}
+function fmtZ(a){ const z = 1/a - 1; return z < 0.005 ? 'today (z = 0)' : 'redshift z = ' + z.toFixed(2); }
+
+function refreshLabels(){
+  $('omVal').textContent = state.om.toFixed(3);
+  $('s8Val').textContent = state.s8.toFixed(3);
+  $('nsVal').textContent = state.ns.toFixed(3);
+  $('aVal').textContent  = state.a.toFixed(3);
+  $('zHint').textContent = fmtZ(state.a);
+  const mp = state.om*2.775e11*Math.pow(BOX/state.N, 3)/1e12;
+  $('boxinfo').textContent =
+    `${BOX.toFixed(0)} Mpc/h box · ${state.N}\u00B3 particles · each point ≈ ${mp.toFixed(1)}\u00D710\u00B9\u00B2 M\u2609 of matter`;
+}
+function refreshAmp(){
+  const D = state.s8*growthNorm(state.a, state.om);
+  uniforms.uD1.value = D;
+  uniforms.uD2.value = state.order >= 2 ? (3/7)*D*D*Math.pow(state.om, -1/143) : 0;
+  // RSD: line-of-sight axis + growth rate f ~ Omega_m(a)^0.55, f2 ~ 2 f1
+  const oma = state.om/(state.om + (1-state.om)*state.a*state.a*state.a);
+  const f1 = Math.pow(oma, 0.55);
+  uniforms.uF1.value = f1;
+  uniforms.uF2.value = 2*f1;
+  const axis = {off:[0,0,0], x:[1,0,0], y:[0,1,0], z:[0,0,1]}[state.rsd] || [0,0,0];
+  uniforms.uLOS.value.set(axis[0], axis[1], axis[2]);
+  drawPk();
+  refreshProducts();
+}
+
+let debounceId = 0;
+function scheduleRecompute(){
+  clearTimeout(debounceId);
+  debounceId = setTimeout(() => {
+    setStatus('recomputing universe…');
+    setTimeout(() => {            // let the status text paint first
+      pushNewFields();
+      refreshAmp();
+      setStatus('');
+    }, 30);
+  }, 220);
+}
+
+sliders.om.addEventListener('input', () => { state.om = +sliders.om.value; refreshLabels(); refreshAmp(); scheduleRecompute(); });
+sliders.ns.addEventListener('input', () => { state.ns = +sliders.ns.value; refreshLabels(); scheduleRecompute(); });
+sliders.s8.addEventListener('input', () => { state.s8 = +sliders.s8.value; refreshLabels(); refreshAmp(); });
+sliders.a .addEventListener('input', () => { state.a  = +sliders.a.value;  refreshLabels(); refreshAmp(); });
+
+$('play').addEventListener('click', () => {
+  state.playing = !state.playing;
+  if (state.playing && state.a > 0.98) state.a = 0.05;
+  $('play').innerHTML = state.playing ? '&#10074;&#10074; Pause' : '&#9654; Grow the universe';
+});
+
+const presets = {
+  planck: { om: 0.315, s8: 0.811, ns: 0.965 },
+  highom: { om: 0.550, s8: 0.811, ns: 0.965 },
+  lows8:  { om: 0.315, s8: 0.450, ns: 0.965 },
+  blue:   { om: 0.315, s8: 0.811, ns: 1.250 },
+};
+document.querySelectorAll('[data-preset]').forEach(b =>
+  b.addEventListener('click', () => {
+    Object.assign(state, presets[b.dataset.preset]);
+    sliders.om.value = state.om; sliders.s8.value = state.s8; sliders.ns.value = state.ns;
+    refreshLabels(); refreshAmp(); scheduleRecompute();
+  }));
+
+document.querySelectorAll('[data-order]').forEach(b =>
+  b.addEventListener('click', () => {
+    state.order = +b.dataset.order;
+    document.querySelectorAll('[data-order]').forEach(x =>
+      x.classList.toggle('primary', +x.dataset.order === state.order));
+    $('orderHint').textContent = state.order === 2
+      ? 'Second-order: stronger collapse, sharper knots — closer to N-body.'
+      : 'Displacement model. 2LPT sharpens filaments and knots.';
+    setStatus(state.order === 2 ? 'adding second-order flow…' : 'reverting to Zel\u2019dovich…');
+    setTimeout(() => { pushNewFields(); refreshAmp(); setStatus(''); }, 30);
+  }));
+
+$('reseed').addEventListener('click', () => {
+  state.seed = (Math.random()*2**31) | 0;
+  rebuildAll('drawing a new universe…');
+});
+$('res').addEventListener('change', () => {
+  state.N = +$('res').value;
+  rebuildAll(`rebuilding at ${state.N}\u00B3…`);
+});
+$('togglePanel').addEventListener('click', () => $('panel').classList.toggle('open'));
+
+document.querySelectorAll('[data-rsd]').forEach(b =>
+  b.addEventListener('click', () => {
+    state.rsd = b.dataset.rsd;
+    document.querySelectorAll('[data-rsd]').forEach(x =>
+      x.classList.toggle('primary', x.dataset.rsd === state.rsd));
+    refreshAmp();                       // updates uLOS + redraws slice
+  }));
+
+$('sliceToggle').addEventListener('click', () => {
+  state.showSlice = !state.showSlice;
+  $('sliceBox').style.display = state.showSlice ? 'block' : 'none';
+  $('sliceToggle').classList.toggle('primary', state.showSlice);
+  if (state.showSlice) drawSlice();
+});
+
+document.querySelectorAll('[data-render]').forEach(b =>
+  b.addEventListener('click', () => setRenderMode(b.dataset.render)));
+
+const pkToggle = (id, key) => $(id).addEventListener('click', () => {
+  state[key] = !state[key];
+  $(id).classList.toggle('primary', state[key]);
+  if (key === 'pk2D') $('pk2Box').style.display = state.pk2D ? 'block' : 'none';
+  if (state.pkMatter || state.pkHalos || state.pkGals || state.pk2D){
+    if ((state.pkHalos || state.pkGals) && !lastHalos.length) updateHalos();
+    measurePk();
+  } else drawPk();
+});
+pkToggle('pkMatter','pkMatter'); pkToggle('pkHalos','pkHalos');
+pkToggle('pkGals','pkGals');     pkToggle('pk2D','pk2D');
+
+$('haloToggle').addEventListener('click', () => {
+  state.showHalos = !state.showHalos;
+  $('haloToggle').classList.toggle('primary', state.showHalos);
+  if (haloMesh) haloMesh.visible = state.showHalos;
+  if (state.showHalos || state.showGals) updateHalos();
+});
+$('galToggle').addEventListener('click', () => {
+  state.showGals = !state.showGals;
+  $('galToggle').classList.toggle('primary', state.showGals);
+  if (galPoints) galPoints.visible = state.showGals;
+  if (state.showHalos || state.showGals) updateHalos();
+});
+const hodSync = () => { $('hminVal').textContent = state.hodMmin.toFixed(2);
+  $('hm1Val').textContent = state.hodM1.toFixed(2); $('halVal').textContent = state.hodAlpha.toFixed(2); };
+$('hmin').addEventListener('input', e => { state.hodMmin = +e.target.value; hodSync();
+  if (state.showHalos||state.showGals) refreshProducts(); });
+$('hm1').addEventListener('input', e => { state.hodM1 = +e.target.value; hodSync();
+  if (state.showHalos||state.showGals) refreshProducts(); });
+$('hal').addEventListener('input', e => { state.hodAlpha = +e.target.value; hodSync();
+  if (state.showHalos||state.showGals) refreshProducts(); });
+hodSync();
+
+function rebuildAll(msg){
+  setStatus(msg);
+  setTimeout(() => {
+    buildGrid(state.N, state.seed);
+    buildGeometry();
+    const a = geo.attributes;
+    computeFields(state.om, state.ns, state.order,
+                  a.disp1.array, a.delta1.array, a.d2b.array, a.inv2.array, a.inv3.array);
+    a.disp0.array.set(a.disp1.array);
+    a.delta0.array.set(a.delta1.array);
+    a.d2a.array.set(a.d2b.array);
+    ['disp0','disp1','d2a','d2b','delta0','delta1','inv2','inv3'].forEach(n => a[n].needsUpdate = true);
+    uniforms.uMix.value = 1;
+    refreshLabels(); refreshAmp();
+    setStatus('');
+  }, 30);
+}
+
+/* ---------------- analysis products: 2D matter slice ---------------- */
+/* Displaced (optionally redshift-space) position of particle i, mirroring
+   the vertex shader so CPU-side products match the rendered cloud. */
+function displacedPos(i, out){
+  const a = geo.attributes, N = state.N, cell = BOX/state.N;
+  const ix = i % N, iy = (Math.floor(i/N)) % N, iz = Math.floor(i/(N*N));
+  const D1 = uniforms.uD1.value, D2 = uniforms.uD2.value;
+  const F1 = uniforms.uF1.value, F2 = uniforms.uF2.value, L = uniforms.uLOS.value;
+  const p1 = a.disp1.array, p2 = a.d2b.array;
+  let dx = D1*p1[3*i],   dy = D1*p1[3*i+1], dz = D1*p1[3*i+2];
+  if (D2){ dx += D2*p2[3*i]; dy += D2*p2[3*i+1]; dz += D2*p2[3*i+2]; }
+  if (L.x || L.y || L.z){
+    const s1 = p1[3*i]*L.x + p1[3*i+1]*L.y + p1[3*i+2]*L.z;
+    const s2 = p2[3*i]*L.x + p2[3*i+1]*L.y + p2[3*i+2]*L.z;
+    const e = F1*D1*s1 + F2*D2*s2;
+    dx += e*L.x; dy += e*L.y; dz += e*L.z;
+  }
+  out[0] = ((( (ix+0.5)*cell + dx )%BOX)+BOX)%BOX;
+  out[1] = ((( (iy+0.5)*cell + dy )%BOX)+BOX)%BOX;
+  out[2] = ((( (iz+0.5)*cell + dz )%BOX)+BOX)%BOX;
+}
+
+const sliceCanvas = $('slice'), sliceCtx = sliceCanvas && sliceCanvas.getContext('2d');
+const SLICE_AXIS = 2;                 // integrate along z, image in (x,y)
+function drawSlice(){
+  if (!state.showSlice || !sliceCtx) return;
+  const N = state.N, M = N*N*N, G2 = 200;          // 2D image resolution
+  const grid = new Float32Array(G2*G2);
+  const p = [0,0,0];
+  const ax = SLICE_AXIS, u = (ax+1)%3, v = (ax+2)%3;
+  // column density: integrate ALL particles along the axis (CIC in 2D)
+  for (let i = 0; i < M; i++){
+    displacedPos(i, p);
+    const gu = p[u]/BOX*G2, gv = p[v]/BOX*G2;
+    const iu = gu|0, iv = gv|0, du = gu-iu, dv = gv-iv;
+    grid[((iv)%G2)*G2 + (iu)%G2]           += (1-du)*(1-dv);
+    grid[((iv)%G2)*G2 + (iu+1)%G2]         += du*(1-dv);
+    grid[((iv+1)%G2)*G2 + (iu)%G2]         += (1-du)*dv;
+    grid[((iv+1)%G2)*G2 + (iu+1)%G2]       += du*dv;
+  }
+  // light separable Gaussian smoothing for a clean SPH-like look
+  const sm = new Float32Array(G2*G2), w = [0.25,0.5,0.25];
+  for (let y=0;y<G2;y++)for(let x=0;x<G2;x++){let s=0;
+    for(let k=-1;k<=1;k++) s+=grid[y*G2+((x+k+G2)%G2)]*w[k+1]; sm[y*G2+x]=s;}
+  for (let y=0;y<G2;y++)for(let x=0;x<G2;x++){let s=0;
+    for(let k=-1;k<=1;k++) s+=sm[((y+k+G2)%G2)*G2+x]*w[k+1]; grid[y*G2+x]=s;}
+  let mx = 0; for (let i = 0; i < grid.length; i++) if (grid[i] > mx) mx = grid[i];
+  const img = sliceCtx.createImageData(G2, G2);
+  const ramp = t => {
+    const cs = [[5,11,33],[13,51,107],[31,133,168],[247,168,77],[255,247,224]];
+    const x = Math.min(0.999, Math.max(0, t))*4, k = x|0, fr = x-k;
+    const c0 = cs[k], c1 = cs[k+1];
+    return [c0[0]+(c1[0]-c0[0])*fr, c0[1]+(c1[1]-c0[1])*fr, c0[2]+(c1[2]-c0[2])*fr];
+  };
+  const lmx = Math.log(1+mx);
+  for (let i = 0; i < grid.length; i++){
+    const t = mx > 0 ? Math.log(1+grid[i])/lmx : 0;
+    const c = ramp(t);
+    img.data[4*i]=c[0]; img.data[4*i+1]=c[1]; img.data[4*i+2]=c[2]; img.data[4*i+3]=255;
+  }
+  const tmp = document.createElement('canvas'); tmp.width=tmp.height=G2;
+  tmp.getContext('2d').putImageData(img,0,0);
+  sliceCtx.imageSmoothingEnabled = true;            // smooth upscale
+  sliceCtx.drawImage(tmp, 0, 0, sliceCanvas.width, sliceCanvas.height);
+  $('sliceCap').textContent =
+    `column density · ${'xyz'[ax]}-projection` + (state.rsd!=='off' ? ` · z-space (${state.rsd})` : '');
+}
+
+let sliceTimer = 0, prodTimer = 0;
+function refreshProducts(){
+  const needVol = (state.render === 'volume');
+  const needPk = state.pkMatter || state.pkHalos || state.pkGals || state.pk2D;
+  if (!state.showSlice && !state.showHalos && !state.showGals && !needVol && !needPk) return;
+  clearTimeout(prodTimer);
+  prodTimer = setTimeout(() => {
+    if (state.showSlice) drawSlice();
+    if (state.showHalos || state.showGals || state.pkHalos || state.pkGals) updateHalos();
+    if (state.render === 'volume') buildVolTex();
+    if (needPk) measurePk();
+  }, 70);                                            // throttle the CPU passes
+}
+
+/* -------------- proxy halos + HOD galaxies (overlay) ---------------- */
+/* LPT forms no bound halos, so these are density-peak proxies: one halo per
+   local maximum of the displayed (real- or redshift-space) density, with mass
+   from the background-subtracted aperture. Galaxies are painted via a
+   Zheng et al. (2007) HOD. Cluster-scale here since m_p ~ 5e12 Msun/h. */
+function erf(x){
+  const t = 1/(1 + 0.3275911*Math.abs(x));
+  const y = 1 - (((((1.061405429*t - 1.453152027)*t) + 1.421413741)*t
+            - 0.284496736)*t + 0.254829592)*t*Math.exp(-x*x);
+  return x < 0 ? -y : y;
+}
+function poisson(l){ if (l<=0) return 0; const L=Math.exp(-l); let k=0,p=1;
+  do { k++; p*=Math.random(); } while (p>L); return k-1; }
+
+const HALO_MAX = 3000, GAL_MAX = 12000;
+let haloMesh = null, galPoints = null, galPos = null, galType = null;
+function buildHaloObjects(){
+  const sph = new THREE.IcosahedronGeometry(1, 1);
+  const hmat = new THREE.MeshBasicMaterial({ color: 0x9ec7ff, transparent: true,
+    opacity: 0.10, depthWrite: false, blending: THREE.AdditiveBlending });
+  haloMesh = new THREE.InstancedMesh(sph, hmat, HALO_MAX);
+  haloMesh.count = 0; haloMesh.frustumCulled = false; haloMesh.visible = false;
+  scene.add(haloMesh);
+
+  galPos = new Float32Array(3*GAL_MAX); galType = new Float32Array(GAL_MAX);
+  const gg = new THREE.BufferGeometry();
+  gg.setAttribute('position', new THREE.BufferAttribute(galPos, 3));
+  gg.setAttribute('aType', new THREE.BufferAttribute(galType, 1));
+  gg.setDrawRange(0, 0);
+  const gmat = new THREE.ShaderMaterial({
+    uniforms: {}, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: `
+      attribute float aType; varying float vT;
+      void main(){ vT = aType;
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = (aType < 0.5 ? 11.0 : 7.0) * (440.0 / -mv.z);
+        gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `
+      precision mediump float; varying float vT;
+      void main(){ vec2 uv = gl_PointCoord*2.0-1.0; float r2 = dot(uv,uv);
+        if (r2 > 1.0) discard; float a = exp(-2.5*r2);
+        vec3 cen = vec3(1.0,0.85,0.45), sat = vec3(0.55,0.9,1.0);
+        vec3 c = mix(cen, sat, step(0.5, vT));
+        gl_FragColor = vec4(c*a, a); }`,
+  });
+  galPoints = new THREE.Points(gg, gmat);
+  galPoints.frustumCulled = false; galPoints.visible = false;
+  scene.add(galPoints);
+}
+
+function updateHalos(){
+  if (!haloMesh) buildHaloObjects();
+  const N = state.N, Nh = N, M = Nh*Nh*Nh, cell = BOX/Nh;
+  // 1) paint displayed (real/z-space) positions to a density grid
+  const rho = new Float32Array(M), p = [0,0,0];
+  for (let i = 0; i < N*N*N; i++){
+    displacedPos(i, p);
+    const gx=p[0]/cell, gy=p[1]/cell, gz=p[2]/cell;
+    const ix=gx|0, iy=gy|0, iz=gz|0, dx=gx-ix, dy=gy-iy, dz=gz-iz;
+    for (let a=0;a<2;a++)for(let b=0;b<2;b++)for(let c=0;c<2;c++)
+      rho[(((iz+c)%Nh)*Nh+((iy+b)%Nh))*Nh+((ix+a)%Nh)] += (a?dx:1-dx)*(b?dy:1-dy)*(c?dz:1-dz);
+  }
+  let mean=0; for (let i=0;i<M;i++) mean+=rho[i]; mean/=M;
+  // 2) peak-based halos: local maxima above threshold, aperture (excess) mass
+  const mp = state.om*2.775e11*Math.pow(BOX/N,3);    // Msun/h per particle
+  const thrAbs=(1+8)*mean, Rap=1.5, R=2;
+  const idx=(x,y,z)=>(((z+Nh)%Nh)*Nh+((y+Nh)%Nh))*Nh+((x+Nh)%Nh);
+  let peaks=[];
+  for (let z=0;z<Nh;z++)for(let y=0;y<Nh;y++)for(let x=0;x<Nh;x++){
+    const v=rho[idx(x,y,z)]; if (v<thrAbs) continue; let mx=true;
+    for(let dz=-1;dz<=1&&mx;dz++)for(let dy=-1;dy<=1&&mx;dy++)for(let dx=-1;dx<=1;dx++)
+      if((dx||dy||dz)&&rho[idx(x+dx,y+dy,z+dz)]>v){mx=false;break;}
+    if(!mx) continue;
+    let m=0,sx=0,sy=0,sz=0;
+    for(let dz=-R;dz<=R;dz++)for(let dy=-R;dy<=R;dy++)for(let dx=-R;dx<=R;dx++){
+      if(dx*dx+dy*dy+dz*dz>Rap*Rap)continue;
+      const w=rho[idx(x+dx,y+dy,z+dz)]-mean; if(w>0){m+=w;sx+=w*dx;sy+=w*dy;sz+=w*dz;}}
+    if(m*mp < 2*mp) continue;
+    peaks.push({mass:m*mp,
+      cx:(((x+0.5+sx/m)*cell)%BOX+BOX)%BOX,
+      cy:(((y+0.5+sy/m)*cell)%BOX+BOX)%BOX,
+      cz:(((z+0.5+sz/m)*cell)%BOX+BOX)%BOX});
+  }
+  peaks.sort((a,b)=>b.mass-a.mass);
+  const acc=[], rc=Rap*cell;
+  for(const q of peaks){ let ok=true;
+    for(const h of acc){ let dx=Math.abs(q.cx-h.cx);dx=Math.min(dx,BOX-dx);
+      let dy=Math.abs(q.cy-h.cy);dy=Math.min(dy,BOX-dy);
+      let dz=Math.abs(q.cz-h.cz);dz=Math.min(dz,BOX-dz);
+      if(dx*dx+dy*dy+dz*dz<rc*rc){ok=false;break;} }
+    if(ok) acc.push(q); if(acc.length>=HALO_MAX) break; }
+
+  // 3) render halos as instanced translucent spheres (radius ~ M^1/3)
+  const dummy = new THREE.Object3D(), Mref=Math.pow(10,14.5);
+  for(let i=0;i<acc.length;i++){ const h=acc[i];
+    const Rv = 2.2*Math.cbrt(h.mass/Mref);           // Mpc/h, visual
+    dummy.position.set(h.cx-BOX/2, h.cy-BOX/2, h.cz-BOX/2);
+    dummy.scale.setScalar(Math.max(Rv,1.0)); dummy.updateMatrix();
+    haloMesh.setMatrixAt(i, dummy.matrix);
+  }
+  haloMesh.count = acc.length; haloMesh.instanceMatrix.needsUpdate = true;
+  haloMesh.visible = state.showHalos;
+
+  // 4) HOD galaxies: central (Bernoulli on <N_cen>) + Poisson satellites
+  const logMmin=state.hodMmin, logM1=state.hodM1, alpha=state.hodAlpha, sig=0.3;
+  const M0=Math.pow(10,logMmin), M1=Math.pow(10,logM1);
+  const los = uniforms.uLOS.value, rsdOn = (los.x||los.y||los.z);
+  let g=0;
+  for(const h of acc){ if(g>=GAL_MAX) break;
+    const lm=Math.log10(h.mass), Ncen=0.5*(1+erf((lm-logMmin)/sig));
+    if(Math.random()>=Ncen) continue;
+    galPos[3*g]=h.cx-BOX/2; galPos[3*g+1]=h.cy-BOX/2; galPos[3*g+2]=h.cz-BOX/2;
+    galType[g]=0; g++;
+    if(h.mass<=M0) continue;
+    const Nsat=poisson(Math.pow((h.mass-M0)/M1, alpha));
+    const Rh=2.2*Math.cbrt(h.mass/Mref);             // satellite scatter radius
+    for(let s=0;s<Nsat&&g<GAL_MAX;s++){
+      // isotropic scatter, centrally concentrated
+      const u=Math.random(), r=Rh*Math.pow(u,0.7);
+      const ct=2*Math.random()-1, st=Math.sqrt(1-ct*ct), ph=2*Math.PI*Math.random();
+      let ox=r*st*Math.cos(ph), oy=r*st*Math.sin(ph), oz=r*ct;
+      if(rsdOn){ // fingers-of-god: stretch along LOS by virial velocity proxy
+        const fog=2.5*(los.x*ox+los.y*oy+los.z*oz);
+        ox+=fog*los.x; oy+=fog*los.y; oz+=fog*los.z; }
+      galPos[3*g]=h.cx-BOX/2+ox; galPos[3*g+1]=h.cy-BOX/2+oy; galPos[3*g+2]=h.cz-BOX/2+oz;
+      galType[g]=1; g++;
+    }
+  }
+  galPoints.geometry.setDrawRange(0, g);
+  galPoints.geometry.attributes.position.needsUpdate = true;
+  galPoints.geometry.attributes.aType.needsUpdate = true;
+  galPoints.visible = state.showGals;
+  lastHalos = acc; galCount = g;
+  $('haloInfo').textContent = `${acc.length} proxy halos · ${g} HOD galaxies`;
+}
+let lastHalos = [], galCount = 0;
+
+/* -------------------- power-spectrum estimators -------------------- */
+/* P(k) = (V/Ncells^2)|delta_k|^2, CIC-deconvolved (W^2 = prod sinc^4),
+   shot noise V/Nobj subtracted. Reuses the same fft3d as the solver. */
+const PK_N = 64;
+const pkData = { matter:null, halos:null, gals:null };
+
+function estimatePk(grid, N, shot){
+  const M=N*N*N, kf=2*Math.PI/BOX, half=N>>1, V=BOX*BOX*BOX;
+  const re=Float32Array.from(grid), im=new Float32Array(M);
+  fft3d(re, im, N, false);
+  const norm=V/(M*M), nb=half;
+  const Psum=new Float64Array(nb+1), cnt=new Float64Array(nb+1);
+  const sinc=x=> x===0?1:Math.sin(x)/x;
+  let idx=0;
+  for(let iz=0;iz<N;iz++){const fz=iz<=half?iz:iz-N;
+   for(let iy=0;iy<N;iy++){const fy=iy<=half?iy:iy-N;
+    for(let ix=0;ix<N;ix++,idx++){const fx=ix<=half?ix:ix-N;
+      if(!fx&&!fy&&!fz) continue;
+      const b=Math.round(Math.sqrt(fx*fx+fy*fy+fz*fz)); if(b<1||b>nb) continue;
+      const w=sinc(Math.PI*fx/N)*sinc(Math.PI*fy/N)*sinc(Math.PI*fz/N);
+      Psum[b]+=(re[idx]*re[idx]+im[idx]*im[idx])*norm/Math.pow(w,4); cnt[b]++;
+    }}}
+  const ks=[], Ps=[];
+  for(let b=1;b<=nb;b++) if(cnt[b]>0){ ks.push(b*kf); Ps.push(Math.max(Psum[b]/cnt[b]-shot, 1e-2)); }
+  return {ks, Ps};
+}
+function deltaFromParticles(N){
+  const M=N*N*N, cell=BOX/N, rho=new Float32Array(M), p=[0,0,0];
+  for(let i=0;i<state.N*state.N*state.N;i++){
+    displacedPos(i,p);
+    const gx=p[0]/cell,gy=p[1]/cell,gz=p[2]/cell,ix=gx|0,iy=gy|0,iz=gz|0,dx=gx-ix,dy=gy-iy,dz=gz-iz;
+    for(let a=0;a<2;a++)for(let b=0;b<2;b++)for(let c=0;c<2;c++)
+      rho[(((iz+c)%N)*N+((iy+b)%N))*N+((ix+a)%N)]+=(a?dx:1-dx)*(b?dy:1-dy)*(c?dz:1-dz);
+  }
+  let mean=0; for(let i=0;i<M;i++) mean+=rho[i]; mean/=M;
+  for(let i=0;i<M;i++) rho[i]=rho[i]/mean-1;
+  return {rho, Np: state.N*state.N*state.N};
+}
+function deltaFromCatalog(getXYZ, n, N){
+  const M=N*N*N, cell=BOX/N, rho=new Float32Array(M), p=[0,0,0];
+  for(let i=0;i<n;i++){ getXYZ(i,p);
+    let x=((p[0]%BOX)+BOX)%BOX, y=((p[1]%BOX)+BOX)%BOX, z=((p[2]%BOX)+BOX)%BOX;
+    const gx=x/cell,gy=y/cell,gz=z/cell,ix=gx|0,iy=gy|0,iz=gz|0,dx=gx-ix,dy=gy-iy,dz=gz-iz;
+    for(let a=0;a<2;a++)for(let b=0;b<2;b++)for(let c=0;c<2;c++)
+      rho[(((iz+c)%N)*N+((iy+b)%N))*N+((ix+a)%N)]+=(a?dx:1-dx)*(b?dy:1-dy)*(c?dz:1-dz);
+  }
+  let mean=0; for(let i=0;i<M;i++) mean+=rho[i]; mean/=M;
+  if (mean>0) for(let i=0;i<M;i++) rho[i]=rho[i]/mean-1;
+  return rho;
+}
+function measurePk(){
+  const V=BOX*BOX*BOX;
+  if (state.pkMatter){
+    const {rho,Np}=deltaFromParticles(PK_N);
+    pkData.matter=estimatePk(rho, PK_N, V/Np);
+  } else pkData.matter=null;
+  if (state.pkHalos && lastHalos.length>3){
+    const rho=deltaFromCatalog((i,p)=>{const h=lastHalos[i];p[0]=h.cx;p[1]=h.cy;p[2]=h.cz;}, lastHalos.length, PK_N);
+    pkData.halos=estimatePk(rho, PK_N, V/lastHalos.length);
+  } else pkData.halos=null;
+  if (state.pkGals && galCount>3){
+    const rho=deltaFromCatalog((i,p)=>{p[0]=galPos[3*i]+BOX/2;p[1]=galPos[3*i+1]+BOX/2;p[2]=galPos[3*i+2]+BOX/2;}, galCount, PK_N);
+    pkData.gals=estimatePk(rho, PK_N, V/galCount);
+  } else pkData.gals=null;
+  drawPk();
+  if (state.pk2D) draw2DPk();
+}
+
+/* ------------------------- P(k) inset ------------------------------ */
+const pkCanvas = $('pk'), pkCtx = pkCanvas.getContext('2d');
+function drawPk(){
+  const W = pkCanvas.width, H = pkCanvas.height, ctx = pkCtx;
+  ctx.clearRect(0, 0, W, H);
+  const kMin = 2*Math.PI/BOX, kMax = Math.PI*state.N/BOX;
+  const lo = Math.log10(kMin), hi = Math.log10(Math.min(kMax, 1.0));
+  const ampSq = Math.pow(state.s8*growthNorm(state.a, state.om), 2);
+
+  const curve = (om, ns, aSq) => {
+    const P = makePk(om, ns), pts = [];
+    for (let i = 0; i <= 100; i++){
+      const k = Math.pow(10, lo + (hi - lo)*i/100);
+      pts.push([Math.log10(k), Math.log10(aSq*P(k))]);
+    }
+    return pts;
+  };
+  const cur = curve(state.om, state.ns, ampSq);
+  const ref = curve(0.315, 0.965, 0.811*0.811);
+  let ys = cur.concat(ref).map(p => p[1]);
+  // include measured spectra in the y-range
+  const meas = [pkData.matter, pkData.halos, pkData.gals];
+  meas.forEach(m => { if (m) m.Ps.forEach((P,i) => { if (m.ks[i] <= Math.pow(10,hi)) ys.push(Math.log10(P)); }); });
+  const yLo = Math.min(...ys) - 0.2, yHi = Math.max(...ys) + 0.3;
+  const X = lx => 8 + (W - 16)*(lx - lo)/(hi - lo);
+  const Y = ly => H - 18 - (H - 26)*(ly - yLo)/(yHi - yLo);
+  const plot = (pts, color, width) => {
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.beginPath();
+    pts.forEach((p, i) => i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1])));
+    ctx.stroke();
+  };
+  const dots = (m, color) => { if (!m) return; ctx.fillStyle = color;
+    for (let i=0;i<m.ks.length;i++){ const lk=Math.log10(m.ks[i]); if (lk<lo||lk>hi) continue;
+      ctx.beginPath(); ctx.arc(X(lk), Y(Math.log10(m.Ps[i])), 1.6, 0, 6.28); ctx.fill(); } };
+  plot(ref, 'rgba(139,147,167,0.35)', 1);
+  plot(cur, '#ffb454', 1.8);
+  dots(pkData.matter, '#ffffff');
+  dots(pkData.halos,  '#9ec7ff');
+  dots(pkData.gals,   '#ffd24a');
+  ctx.fillStyle = '#8b93a7';
+  ctx.font = '9px "IBM Plex Mono", monospace';
+  ctx.fillText('k  [h/Mpc]  \u2192', W - 86, H - 5);
+  ctx.save(); ctx.translate(9, 64); ctx.rotate(-Math.PI/2);
+  ctx.fillText('P(k) \u2192', 0, 0); ctx.restore();
+  ctx.fillStyle = 'rgba(139,147,167,0.8)';
+  ctx.fillText(pkData.matter ? 'line: linear · dots: measured' : 'grey: Planck today', 12, 12);
+}
+
+/* ------------------- 2D P(k) of the column density ----------------- */
+function fft2d(re, im, N, inv){
+  for (let y=0;y<N;y++) fftLine(re, im, N, y*N, 1, inv);
+  for (let x=0;x<N;x++) fftLine(re, im, N, x, N, inv);
+}
+const pk2Canvas = $('pk2'), pk2Ctx = pk2Canvas && pk2Canvas.getContext('2d');
+function draw2DPk(){
+  if (!state.pk2D || !pk2Ctx) return;
+  const G2 = 128, M = G2*G2, cell = BOX/G2, p = [0,0,0];
+  const re = new Float32Array(M), im = new Float32Array(M);
+  const ax = SLICE_AXIS, u = (ax+1)%3, v = (ax+2)%3;
+  for (let i=0;i<state.N*state.N*state.N;i++){
+    displacedPos(i,p);
+    const gu=p[u]/BOX*G2, gv=p[v]/BOX*G2, iu=gu|0, iv=gv|0, du=gu-iu, dv=gv-iv;
+    re[(iv%G2)*G2+(iu%G2)]+=(1-du)*(1-dv); re[(iv%G2)*G2+(iu+1)%G2]+=du*(1-dv);
+    re[((iv+1)%G2)*G2+(iu%G2)]+=(1-du)*dv; re[((iv+1)%G2)*G2+(iu+1)%G2]+=du*dv;
+  }
+  let mean=0; for(let i=0;i<M;i++) mean+=re[i]; mean/=M;
+  for(let i=0;i<M;i++) re[i]=re[i]/mean-1;
+  fft2d(re, im, G2, false);
+  // power, fftshifted, log-scaled to an image
+  const pw = new Float32Array(M); let mx=-1e30, mn=1e30;
+  for(let i=0;i<M;i++){ const lp=Math.log10(re[i]*re[i]+im[i]*im[i]+1e-6); pw[i]=lp; if(lp>mx)mx=lp; if(lp<mn)mn=lp; }
+  mn = mx - 6;                                       // 6-decade dynamic range
+  const img = pk2Ctx.createImageData(G2, G2);
+  const ramp = t => { const cs=[[5,11,33],[13,51,107],[31,133,168],[247,168,77],[255,247,224]];
+    const x=Math.min(0.999,Math.max(0,t))*4,k=x|0,fr=x-k,c0=cs[k],c1=cs[k+1];
+    return [c0[0]+(c1[0]-c0[0])*fr,c0[1]+(c1[1]-c0[1])*fr,c0[2]+(c1[2]-c0[2])*fr]; };
+  for(let y=0;y<G2;y++)for(let x=0;x<G2;x++){
+    const sx=(x+G2/2)%G2, sy=(y+G2/2)%G2;            // fftshift: k=0 to centre
+    const t=(pw[sy*G2+sx]-mn)/(mx-mn), c=ramp(t), o=4*(y*G2+x);
+    img.data[o]=c[0]; img.data[o+1]=c[1]; img.data[o+2]=c[2]; img.data[o+3]=255;
+  }
+  const tmp=document.createElement('canvas'); tmp.width=tmp.height=G2;
+  tmp.getContext('2d').putImageData(img,0,0);
+  pk2Ctx.imageSmoothingEnabled=true;
+  pk2Ctx.drawImage(tmp,0,0,pk2Canvas.width,pk2Canvas.height);
+  $('pk2Cap').textContent = '2D P(k) · ' + ('xyz'[ax]) + '-proj' + (state.rsd!=='off' ? ' · RSD (anisotropic)' : '');
+}
+
+/* ---------------- bloom post-processing (manual, no deps) ----------- */
+const FS_VERT = `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.0,1.0); }`;
+const post = { on: true };
+let rtScene, rtA, rtB, fsScene, fsCam, fsQuad;
+const brightMat = new THREE.ShaderMaterial({ uniforms:{ tDiffuse:{value:null}, thr:{value:0.55} },
+  vertexShader: FS_VERT, fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float thr; varying vec2 vUv;
+    void main(){ vec3 c=texture2D(tDiffuse,vUv).rgb; float l=dot(c,vec3(0.299,0.587,0.114));
+      gl_FragColor=vec4(c*max(0.0,l-thr)/max(l,1e-4),1.0); }` });
+const blurMat = new THREE.ShaderMaterial({ uniforms:{ tDiffuse:{value:null}, dir:{value:new THREE.Vector2()} },
+  vertexShader: FS_VERT, fragmentShader: `
+    uniform sampler2D tDiffuse; uniform vec2 dir; varying vec2 vUv;
+    void main(){ float w0=0.227,w1=0.194,w2=0.121,w3=0.054,w4=0.016;
+      vec3 s=texture2D(tDiffuse,vUv).rgb*w0;
+      s+=texture2D(tDiffuse,vUv+dir).rgb*w1+texture2D(tDiffuse,vUv-dir).rgb*w1;
+      s+=texture2D(tDiffuse,vUv+2.0*dir).rgb*w2+texture2D(tDiffuse,vUv-2.0*dir).rgb*w2;
+      s+=texture2D(tDiffuse,vUv+3.0*dir).rgb*w3+texture2D(tDiffuse,vUv-3.0*dir).rgb*w3;
+      s+=texture2D(tDiffuse,vUv+4.0*dir).rgb*w4+texture2D(tDiffuse,vUv-4.0*dir).rgb*w4;
+      gl_FragColor=vec4(s,1.0); }` });
+const compMat = new THREE.ShaderMaterial({ uniforms:{ tScene:{value:null}, tBloom:{value:null}, strength:{value:0.95} },
+  vertexShader: FS_VERT, fragmentShader: `
+    uniform sampler2D tScene, tBloom; uniform float strength; varying vec2 vUv;
+    void main(){ vec3 c=texture2D(tScene,vUv).rgb + strength*texture2D(tBloom,vUv).rgb;
+      c = c/(c+vec3(1.0));                 // Reinhard tone-map (darks preserved)
+      gl_FragColor=vec4(c,1.0); }` });
+
+function initPost(){
+  const type = renderer.capabilities.isWebGL2 ? THREE.HalfFloatType : THREE.UnsignedByteType;
+  const w = innerWidth, h = innerHeight, hw = Math.max(1,w>>1), hh = Math.max(1,h>>1);
+  rtScene = new THREE.WebGLRenderTarget(w, h, { type });
+  rtA = new THREE.WebGLRenderTarget(hw, hh, { type });
+  rtB = new THREE.WebGLRenderTarget(hw, hh, { type });
+  fsCam = new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+  fsScene = new THREE.Scene();
+  fsQuad = new THREE.Mesh(new THREE.PlaneGeometry(2,2), brightMat);
+  fsScene.add(fsQuad);
+}
+function resizePost(){
+  if (!rtScene) return;
+  const w = innerWidth, h = innerHeight, hw = Math.max(1,w>>1), hh = Math.max(1,h>>1);
+  rtScene.setSize(w,h); rtA.setSize(hw,hh); rtB.setSize(hw,hh);
+}
+function renderPost(){
+  renderer.setRenderTarget(rtScene); renderer.clear(); renderer.render(scene, camera);
+  fsQuad.material = brightMat; brightMat.uniforms.tDiffuse.value = rtScene.texture;
+  renderer.setRenderTarget(rtA); renderer.render(fsScene, fsCam);
+  const px = 1/rtA.width, py = 1/rtA.height;
+  fsQuad.material = blurMat;
+  for (let i=0;i<2;i++){                          // two H+V passes -> wider glow
+    blurMat.uniforms.tDiffuse.value = rtA.texture; blurMat.uniforms.dir.value.set(px,0);
+    renderer.setRenderTarget(rtB); renderer.render(fsScene, fsCam);
+    blurMat.uniforms.tDiffuse.value = rtB.texture; blurMat.uniforms.dir.value.set(0,py);
+    renderer.setRenderTarget(rtA); renderer.render(fsScene, fsCam);
+  }
+  fsQuad.material = compMat;
+  compMat.uniforms.tScene.value = rtScene.texture; compMat.uniforms.tBloom.value = rtA.texture;
+  renderer.setRenderTarget(null); renderer.render(fsScene, fsCam);
+}
+
+/* ----------------- volumetric ray-march mode (WebGL2) -------------- */
+const VOL_RES = 80;
+let volMesh = null, volTex = null, volOK = false;
+function buildVolume(){
+  if (!renderer.capabilities.isWebGL2) return false;
+  renderer.getContext().getExtension('OES_texture_float_linear');
+  const n = VOL_RES;
+  volTex = new THREE.DataTexture3D(new Float32Array(n*n*n), n, n, n);
+  volTex.format = THREE.RedFormat; volTex.type = THREE.FloatType;
+  volTex.minFilter = volTex.magFilter = THREE.LinearFilter;
+  volTex.unpackAlignment = 1; volTex.needsUpdate = true;
+  const mat = new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3, side: THREE.BackSide, transparent: true, depthWrite: false,
+    uniforms: { uVol:{value:volTex}, uScale:{value:1.0} },
+    vertexShader: `
+      out vec3 vOrigin; out vec3 vDir;
+      void main(){
+        vOrigin = (inverse(modelMatrix) * vec4(cameraPosition,1.0)).xyz;
+        vDir = position - vOrigin;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+      }`,
+    fragmentShader: `
+      precision highp float; precision highp sampler3D;
+      in vec3 vOrigin; in vec3 vDir; out vec4 color;
+      uniform sampler3D uVol; uniform float uScale;
+      vec2 hitBox(vec3 o, vec3 d){ vec3 inv=1.0/d; vec3 t0=(-0.5-o)*inv,t1=(0.5-o)*inv;
+        vec3 tn=min(t0,t1), tf=max(t0,t1);
+        return vec2(max(max(tn.x,tn.y),tn.z), min(min(tf.x,tf.y),tf.z)); }
+      vec3 ramp(float t){
+        vec3 c0=vec3(0.02,0.04,0.13),c1=vec3(0.05,0.20,0.42),c2=vec3(0.12,0.52,0.66),
+             c3=vec3(0.97,0.66,0.30),c4=vec3(1.0,0.97,0.90);
+        if(t<0.25)return mix(c0,c1,t*4.0); if(t<0.5)return mix(c1,c2,(t-0.25)*4.0);
+        if(t<0.75)return mix(c2,c3,(t-0.5)*4.0); return mix(c3,c4,(t-0.75)*4.0); }
+      void main(){
+        vec3 rd=normalize(vDir); vec2 b=hitBox(vOrigin,rd);
+        if(b.x>b.y) discard; b.x=max(b.x,0.0);
+        float steps=160.0; vec3 p=vOrigin+b.x*rd; vec3 inc=rd*(b.y-b.x)/steps;
+        vec4 acc=vec4(0.0);
+        for(int i=0;i<160;i++){
+          float d=texture(uVol, p+0.5).r*uScale;
+          float dens=log(1.0+d*7.0);
+          float aS=1.0-exp(-dens*0.55);
+          vec3 col=ramp(clamp(dens*0.22,0.0,1.0))*dens;
+          acc.rgb += (1.0-acc.a)*col*aS; acc.a += (1.0-acc.a)*aS;
+          p+=inc; if(acc.a>0.96) break;
+        }
+        color=vec4(acc.rgb*1.3, acc.a);
+      }`,
+  });
+  volMesh = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), mat);
+  volMesh.scale.setScalar(BOX); volMesh.visible = false;
+  scene.add(volMesh);
+  return true;
+}
+function buildVolTex(){
+  if (!volOK) return;
+  const n = VOL_RES, M = n*n*n, cell = BOX/n, data = volTex.image.data;
+  data.fill(0); const p = [0,0,0];
+  for (let i = 0; i < state.N*state.N*state.N; i++){
+    displacedPos(i, p);
+    const gx=p[0]/cell, gy=p[1]/cell, gz=p[2]/cell;
+    const ix=gx|0, iy=gy|0, iz=gz|0, dx=gx-ix, dy=gy-iy, dz=gz-iz;
+    for (let a=0;a<2;a++)for(let b=0;b<2;b++)for(let c=0;c<2;c++)
+      data[(((iz+c)%n)*n+((iy+b)%n))*n+((ix+a)%n)] += (a?dx:1-dx)*(b?dy:1-dy)*(c?dz:1-dz);
+  }
+  let mean=0; for (let i=0;i<M;i++) mean+=data[i]; mean/=M;
+  const inv=1/Math.max(mean,1e-6); for (let i=0;i<M;i++) data[i]*=inv;   // -> 1+delta
+  volTex.needsUpdate = true;
+}
+function setRenderMode(mode){
+  state.render = mode;
+  if (mode === 'volume' && !volMesh){ volOK = buildVolume(); if (!volOK) state.render='splat'; }
+  if (points) points.visible = state.render === 'splat';
+  if (volMesh) volMesh.visible = state.render === 'volume';
+  document.querySelectorAll('[data-render]').forEach(x =>
+    x.classList.toggle('primary', x.dataset.render === state.render));
+  if (state.render === 'volume') buildVolTex();
+}
+
+/* --------------------------- main loop ------------------------------ */
+let prevT = performance.now();
+function loop(t){
+  const dt = (t - prevT)/1000; prevT = t;
+
+  if (morphT0 >= 0){
+    const u = Math.min(1, (t - morphT0)/MORPH_MS);
+    uniforms.uMix.value = easeInOut(u);
+    if (u >= 1) morphT0 = -1;
+  }
+  if (state.playing){
+    state.a = Math.min(1, state.a + dt*0.22);
+    sliders.a.value = state.a;
+    refreshLabels(); refreshAmp();
+    if (state.a >= 1){ state.playing = false; $('play').innerHTML = '&#9654; Grow the universe'; }
+  }
+  if (!dragging && !reducedMotion && t - cam.lastUser > 2500)
+    cam.theta += dt*0.05;                       // gentle idle rotation
+
+  applyCamera();
+  if (post.on){ if (!rtScene) initPost(); renderPost(); }
+  else renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  resizePost();
+});
+
+/* ------------------------------ boot -------------------------------- */
+refreshLabels();
+rebuildAll('generating initial conditions…');
+applyCamera();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+# OS
+**/.DS_Store
+Thumbs.db
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*~
+
+# Node (for future tooling)
+node_modules/
+npm-debug.log*
+yarn-error.log*
+dist/
+build/
+
+# Python (for future data/analysis tools)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Large data / render artifacts
+*.hdf5
+*.h5
+*.npy
+*.npz
+*.fits
+*.mp4
+*.gif
+*.webm
+data/
+renders/
+output/
+
+# Env / secrets
+.env
+.env.local
