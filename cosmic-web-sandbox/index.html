@@ -64,17 +64,12 @@
   #status.on{opacity:1}
 
   /* ---------- insets ---------- */
-  .cap, #sliceBox .cap, #pk2Box .cap, #pkbox .cap{
+  .cap, #sliceBox .cap, #pkbox .cap{
     font-size:.84rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink);font-weight:500}
-  #sliceBox{position:fixed;left:20px;top:108px;z-index:5;
+  #sliceBox{position:fixed;left:20px;top:150px;z-index:5;
     background:var(--panel);backdrop-filter:blur(10px);
     border:1px solid var(--line);border-radius:12px;padding:11px 13px 9px}
   #slice{display:block;margin-top:7px;border-radius:4px;width:240px;height:240px}
-
-  #pk2Box{position:fixed;right:20px;bottom:84px;z-index:5;
-    background:var(--panel);backdrop-filter:blur(10px);
-    border:1px solid var(--line);border-radius:12px;padding:11px 13px 9px}
-  #pk2{display:block;margin-top:7px;border-radius:4px;width:220px;height:220px}
 
   #pkbox{position:fixed;left:20px;bottom:20px;z-index:5;
     background:var(--panel);backdrop-filter:blur(10px);
@@ -95,7 +90,6 @@
       max-height:55vh;transform:translateY(110%);transition:transform .25s}
     #panel.open{transform:translateY(0)}
     #pkbox{display:none}
-    #pk2Box{display:none !important}
     #sliceBox{display:none !important}
     footer{display:none}
   }
@@ -166,7 +160,6 @@
     <button id="pkMatter">Matter</button>
     <button id="pkHalos">Halos</button>
     <button id="pkGals">Galaxies</button>
-    <button id="pk2D">2D P(k) (inset)</button>
   </div>
   <div class="hint">Measured P(k) from the box (dots) vs linear input (line). Halos/galaxies show bias and shot noise.</div>
 
@@ -214,11 +207,6 @@
 
   <div id="status"></div>
 </aside>
-
-<div id="pk2Box" style="display:none">
-  <div class="cap" id="pk2Cap">2D P(k)</div>
-  <canvas id="pk2" width="240" height="240"></canvas>
-</div>
 
 <div id="sliceBox" style="display:none">
   <div class="cap" id="sliceCap">Matter column density — z LOS</div>
@@ -278,7 +266,7 @@ const state = {
   rsd: 'off', showSlice: false,
   showHalos: false, showGals: true, showBox: true,
   render: 'splat',
-  pkMatter: false, pkHalos: false, pkGals: false, pk2D: false,
+  pkMatter: false, pkHalos: false, pkGals: false,
   hodMmin: 13.5, hodM1: 15.6, hodAlpha: 1.6,
   playing: false,
 };
@@ -904,14 +892,13 @@ document.querySelectorAll('[data-render]').forEach(b =>
 const pkToggle = (id, key) => $(id).addEventListener('click', () => {
   state[key] = !state[key];
   $(id).classList.toggle('primary', state[key]);
-  if (key === 'pk2D') $('pk2Box').style.display = state.pk2D ? 'block' : 'none';
-  if (state.pkMatter || state.pkHalos || state.pkGals || state.pk2D){
+  if (state.pkMatter || state.pkHalos || state.pkGals){
     if ((state.pkHalos || state.pkGals) && !lastHalos.length) updateHalos();
     measurePk();
   } else drawPk();
 });
 pkToggle('pkMatter','pkMatter'); pkToggle('pkHalos','pkHalos');
-pkToggle('pkGals','pkGals');     pkToggle('pk2D','pk2D');
+pkToggle('pkGals','pkGals');
 
 $('haloToggle').addEventListener('click', () => {
   state.showHalos = !state.showHalos;
@@ -1029,7 +1016,7 @@ function drawSlice(){
 let sliceTimer = 0, prodTimer = 0;
 function refreshProducts(){
   const needVol = (state.render === 'volume');
-  const needPk = state.pkMatter || state.pkHalos || state.pkGals || state.pk2D;
+  const needPk = state.pkMatter || state.pkHalos || state.pkGals;
   if (!state.showSlice && !state.showHalos && !state.showGals && !needVol && !needPk) return;
   clearTimeout(prodTimer);
   prodTimer = setTimeout(() => {
@@ -1242,7 +1229,6 @@ function measurePk(){
     pkData.gals=estimatePk(rho, PK_N, V/galCount);
   } else pkData.gals=null;
   drawPk();
-  if (state.pk2D) draw2DPk();
 }
 
 /* ------------------------- P(k) inset ------------------------------ */
@@ -1308,46 +1294,6 @@ function drawPk(){
   ctx.fillText('k [h/Mpc] →', W-96, H-5);
   // x ticks
   for (let e=-2;e<=0;e++){ ctx.fillText('10'+(e), X(e)-10, H-5); }
-}
-
-/* ------------------- 2D P(k) of the column density ----------------- */
-function fft2d(re, im, N, inv){
-  for (let y=0;y<N;y++) fftLine(re, im, N, y*N, 1, inv);
-  for (let x=0;x<N;x++) fftLine(re, im, N, x, N, inv);
-}
-const pk2Canvas = $('pk2'), pk2Ctx = pk2Canvas && pk2Canvas.getContext('2d');
-function draw2DPk(){
-  if (!state.pk2D || !pk2Ctx) return;
-  const G2 = 128, M = G2*G2, cell = BOX/G2, p = [0,0,0];
-  const re = new Float32Array(M), im = new Float32Array(M);
-  const ax = SLICE_AXIS, u = (ax+1)%3, v = (ax+2)%3;
-  for (let i=0;i<state.N*state.N*state.N;i++){
-    displacedPos(i,p);
-    const gu=p[u]/BOX*G2, gv=p[v]/BOX*G2, iu=gu|0, iv=gv|0, du=gu-iu, dv=gv-iv;
-    re[(iv%G2)*G2+(iu%G2)]+=(1-du)*(1-dv); re[(iv%G2)*G2+(iu+1)%G2]+=du*(1-dv);
-    re[((iv+1)%G2)*G2+(iu%G2)]+=(1-du)*dv; re[((iv+1)%G2)*G2+(iu+1)%G2]+=du*dv;
-  }
-  let mean=0; for(let i=0;i<M;i++) mean+=re[i]; mean/=M;
-  for(let i=0;i<M;i++) re[i]=re[i]/mean-1;
-  fft2d(re, im, G2, false);
-  // power, fftshifted, log-scaled to an image
-  const pw = new Float32Array(M); let mx=-1e30, mn=1e30;
-  for(let i=0;i<M;i++){ const lp=Math.log10(re[i]*re[i]+im[i]*im[i]+1e-6); pw[i]=lp; if(lp>mx)mx=lp; if(lp<mn)mn=lp; }
-  mn = mx - 6;                                       // 6-decade dynamic range
-  const img = pk2Ctx.createImageData(G2, G2);
-  const ramp = t => { const cs=[[5,11,33],[13,51,107],[31,133,168],[247,168,77],[255,247,224]];
-    const x=Math.min(0.999,Math.max(0,t))*4,k=x|0,fr=x-k,c0=cs[k],c1=cs[k+1];
-    return [c0[0]+(c1[0]-c0[0])*fr,c0[1]+(c1[1]-c0[1])*fr,c0[2]+(c1[2]-c0[2])*fr]; };
-  for(let y=0;y<G2;y++)for(let x=0;x<G2;x++){
-    const sx=(x+G2/2)%G2, sy=(y+G2/2)%G2;            // fftshift: k=0 to centre
-    const t=(pw[sy*G2+sx]-mn)/(mx-mn), c=ramp(t), o=4*(y*G2+x);
-    img.data[o]=c[0]; img.data[o+1]=c[1]; img.data[o+2]=c[2]; img.data[o+3]=255;
-  }
-  const tmp=document.createElement('canvas'); tmp.width=tmp.height=G2;
-  tmp.getContext('2d').putImageData(img,0,0);
-  pk2Ctx.imageSmoothingEnabled=true;
-  pk2Ctx.drawImage(tmp,0,0,pk2Canvas.width,pk2Canvas.height);
-  $('pk2Cap').textContent = '2D P(k) · ' + ('xyz'[ax]) + '-proj' + (state.rsd!=='off' ? ' · RSD (anisotropic)' : '');
 }
 
 /* ---------------- bloom post-processing (manual, no deps) ----------- */
