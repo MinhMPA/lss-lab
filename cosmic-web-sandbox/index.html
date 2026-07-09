@@ -82,6 +82,9 @@
 
   #togglePanel{display:none;position:fixed;top:14px;right:14px;z-index:7}
 
+  /* embed mode (?embed=1): hide page chrome for clean iframe embedding */
+  body.embed header, body.embed footer{display:none}
+
   @media (max-width:760px){
     header{max-width:70vw}
     header p{display:none}
@@ -135,6 +138,11 @@
   </div>
   <div class="hint">Splats: glowing points. Clouds: ray-marched density cloud.</div>
   <div class="btnrow" style="margin-top:6px">
+    <button data-color="density" class="primary">Density colors</button>
+    <button data-color="web">Web type colors</button>
+  </div>
+  <div class="hint" id="colorHint">Splat colors follow the local (single-stream) density.</div>
+  <div class="btnrow" style="margin-top:6px">
     <button id="sliceToggle">Matter 2D slice (inset)</button>
     <button id="haloToggle">Halos</button>
     <button id="galToggle" class="primary">Galaxies (HOD)</button>
@@ -172,6 +180,8 @@
   <div class="btnrow">
     <button id="play" class="primary">&#9654; Grow the universe</button>
   </div>
+  <div class="hint">Tip: switch to <em>Web type colors</em> to watch gravitational collapse in
+    1, 2, then 3 axes assemble sheets &rarr; filaments &rarr; nodes.</div>
 
   <h2>Cosmology presets</h2>
   <div class="btnrow">
@@ -265,7 +275,7 @@ const state = {
   N: 64, seed: 12345, order: 1,
   rsd: 'off', showSlice: false,
   showHalos: false, showGals: true, showBox: true,
-  render: 'splat',
+  render: 'splat', colorMode: 'density',
   pkMatter: false, pkHalos: false, pkGals: false,
   hodMmin: 13.5, hodM1: 15.6, hodAlpha: 1.6,
   playing: false,
@@ -614,16 +624,19 @@ const uniforms = {
   uLOS:  { value: new THREE.Vector3(0,0,0) },  // redshift-space axis (0 = off)
   uSize: { value: 1.0 },
   uBox:  { value: BOX },
+  uWeb:  { value: 0.0 },   // 0 = density ramp, 1 = web-morphology colors
+  uEigK: { value: 1.0 },   // rescales eigenvalues to the 64^3 grid variance
 };
 
 const vert = `
-  uniform float uMix, uD1, uD2, uF1, uF2, uSize, uBox;
+  uniform float uMix, uD1, uD2, uF1, uF2, uSize, uBox, uEigK;
   uniform vec3 uLOS;
   attribute vec3 disp0;  attribute vec3 disp1;
   attribute vec3 d2a;    attribute vec3 d2b;
   attribute float delta0; attribute float delta1;
   attribute float inv2;  attribute float inv3;
   varying float vT;
+  varying float vC;
   void main(){
     vec3 p1  = mix(disp0, disp1, uMix);          // first-order displacement
     vec3 p2  = mix(d2a,   d2b,   uMix);          // second-order displacement
@@ -637,16 +650,32 @@ const vert = `
     float I1 = -mix(delta0, delta1, uMix);
     float det = 1.0 + uD1*I1 + uD1*uD1*inv2 + uD1*uD1*uD1*inv3;
     float rho = 1.0 / max(abs(det), 0.04);       // caustics saturate bright
-    vT = clamp(0.16*log(rho) + 0.5, 0.0, 1.0);   // log-density -> color/size
+    vT = clamp(0.20*log(rho) + 0.47, 0.0, 1.0);  // log-density -> color/size
+    // T-web classification: eigenvalues a_i of the deformation tensor A
+    // from its invariants via the trigonometric cubic solution
+    // (a^3 - I1 a^2 + I2 a - I3 = 0). Axis i counts as collapsing when
+    // uD1*(-a_i) crosses lambda_th ~ 0.35 (a la Forero-Romero et al. 2009;
+    // the strict Zel'dovich caustic at 1 leaves almost no nodes by z = 0).
+    float pp = inv2 - I1*I1/3.0;
+    float qq = I1*inv2/3.0 - 2.0*I1*I1*I1/27.0 - inv3;
+    float rt = sqrt(max(-pp/3.0, 1e-9));
+    float ph = acos(clamp(-0.5*qq/(rt*rt*rt), -1.0, 1.0))/3.0;
+    float aMax = I1/3.0 + 2.0*rt*cos(ph);
+    float aMin = I1/3.0 + 2.0*rt*cos(ph + 2.0943951);
+    vec3 lam = -vec3(aMin, I1 - aMax - aMin, aMax);
+    vec3 s = smoothstep(vec3(0.25), vec3(0.45), uD1*uEigK*lam);
+    vC = s.x + s.y + s.z;                        // collapsing axes: 0..3
     // adaptive smoothing length h ~ (1+delta)^(-1/3) = |det|^(1/3):
     // voids get large soft kernels that fill the field, knots stay small + sharp
-    float h = clamp(pow(abs(det), 0.3333), 0.32, 2.3);
+    float h = clamp(pow(abs(det), 0.3333), 0.32, 1.9);
     gl_PointSize = uSize * (3.6*h + 1.0) * (420.0 / -mv.z);
     gl_Position  = projectionMatrix * mv;
   }`;
 const frag = `
   precision mediump float;
+  uniform float uWeb;
   varying float vT;
+  varying float vC;
   vec3 ramp(float t){
     vec3 c0 = vec3(0.02,0.04,0.13);
     vec3 c1 = vec3(0.05,0.20,0.42);
@@ -658,13 +687,27 @@ const frag = `
     if (t < 0.75) return mix(c2, c3, (t-0.50)*4.0);
     return mix(c3, c4, (t-0.75)*4.0);
   }
+  vec3 webRamp(float c){                         // void -> sheet -> filament -> node
+    vec3 w0 = vec3(0.05,0.08,0.22);
+    vec3 w1 = vec3(0.42,0.72,0.20);
+    vec3 w2 = vec3(0.22,0.62,1.00);
+    vec3 w3 = vec3(1.00,0.55,0.14);
+    if (c < 1.0) return mix(w0, w1, c);
+    if (c < 2.0) return mix(w1, w2, c - 1.0);
+    return mix(w2, w3, min(c - 2.0, 1.0));
+  }
   void main(){
     vec2 uv = gl_PointCoord*2.0 - 1.0;
     float r2 = dot(uv, uv);
     if (r2 > 1.0) discard;
     float fall = exp(-2.6*r2);                   // soft Gaussian kernel
-    float a = fall*(0.13 + 0.95*vT*vT);          // dense cores brighter
-    gl_FragColor = vec4(ramp(vT)*a*1.25, a);
+    float a = fall*(0.06 + 1.05*vT*vT);          // dense cores brighter, voids dimmer
+    // snap hues toward integer classes and let nodes outshine the filament haze
+    float cc = floor(vC) + smoothstep(0.25, 0.75, fract(vC));
+    vec3 wcol = webRamp(cc) * (0.30 + 0.80*vT) * mix(0.8, 1.7, smoothstep(2.0, 3.0, cc));
+    a *= mix(1.0, 0.85, uWeb);
+    vec3 col = mix(ramp(vT), wcol, uWeb);
+    gl_FragColor = vec4(col*a*1.25, a);
   }`;
 
 let points = null, geo = null;
@@ -714,6 +757,19 @@ function freezePair(a0, a1, m){
     for (let i = 0; i < x.length; i++) x[i] += (y[i] - x[i])*m; }
 }
 
+/* Web-class threshold rescaling: the classification window was calibrated on
+   the 64^3 grid, whose cell-scale variance differs from other resolutions.
+   Rescale eigenvalues by the theory ratio sigma_grid(64)/sigma_grid(N) at the
+   CURRENT cosmology, so class balance is resolution-independent while still
+   responding to Omega_m / n_s / sigma_8 changes. */
+function refreshEigScale(){
+  const Pk = makePk(state.om, state.ns), kf = 2*Math.PI/BOX;
+  const I = K => { let s = 0; const n = 200;
+    for (let i = 0; i < n; i++){ const k = kf + (K - kf)*(i + 0.5)/n; s += k*k*Pk(k); }
+    return s*(K - kf)/n; };
+  uniforms.uEigK.value = Math.sqrt(I(Math.PI*64/BOX)/I(Math.PI*state.N/BOX));
+}
+
 function pushNewFields(){
   const m = uniforms.uMix.value;
   const d0 = geo.attributes.disp0, d1 = geo.attributes.disp1;
@@ -725,6 +781,7 @@ function pushNewFields(){
                 d1.array, e1.array, f1.array, i2.array, i3.array);
   d0.needsUpdate = d1.needsUpdate = f0.needsUpdate = f1.needsUpdate =
     e0.needsUpdate = e1.needsUpdate = i2.needsUpdate = i3.needsUpdate = true;
+  refreshEigScale();
   uniforms.uMix.value = 0;
   morphT0 = performance.now();
   refreshProducts();
@@ -834,6 +891,7 @@ $('play').addEventListener('click', () => {
   state.playing = !state.playing;
   if (state.playing && state.a > 0.98) state.a = 0.05;
   $('play').innerHTML = state.playing ? '&#10074;&#10074; Pause' : '&#9654; Grow the universe';
+  if (!state.playing) refreshProducts();         // full-quality pass on pause
 });
 
 const presets = {
@@ -889,6 +947,21 @@ $('sliceToggle').addEventListener('click', () => {
 document.querySelectorAll('[data-render]').forEach(b =>
   b.addEventListener('click', () => setRenderMode(b.dataset.render)));
 
+document.querySelectorAll('[data-color]').forEach(b =>
+  b.addEventListener('click', () => {
+    state.colorMode = b.dataset.color;
+    if (state.colorMode === 'web' && state.render === 'volume')
+      setRenderMode('splat');                      // web colors only exist in Splats
+    uniforms.uWeb.value = state.colorMode === 'web' ? 1 : 0;
+    document.querySelectorAll('[data-color]').forEach(x =>
+      x.classList.toggle('primary', x.dataset.color === state.colorMode));
+    $('colorHint').innerHTML = state.colorMode === 'web'
+      ? 'Collapsed axes: <span style="color:#9cc94a">1 &rarr; sheets</span> &middot; ' +
+        '<span style="color:#5cb1ff">2 &rarr; filaments</span> &middot; ' +
+        '<span style="color:#ffb454">3 &rarr; nodes</span> &middot; voids stay dark.'
+      : 'Splat colors follow the local (single-stream) density.';
+  }));
+
 const pkToggle = (id, key) => $(id).addEventListener('click', () => {
   state[key] = !state[key];
   $(id).classList.toggle('primary', state[key]);
@@ -939,6 +1012,7 @@ function rebuildAll(msg){
     a.delta0.array.set(a.delta1.array);
     a.d2a.array.set(a.d2b.array);
     ['disp0','disp1','d2a','d2b','delta0','delta1','inv2','inv3'].forEach(n => a[n].needsUpdate = true);
+    refreshEigScale();
     uniforms.uMix.value = 1;
     refreshLabels(); refreshAmp();
     setStatus('');
@@ -969,29 +1043,39 @@ function displacedPos(i, out){
 
 const sliceCanvas = $('slice'), sliceCtx = sliceCanvas && sliceCanvas.getContext('2d');
 const SLICE_AXIS = 2;                 // integrate along z, image in (x,y)
-function drawSlice(){
+function drawSlice(fast){
   if (!state.showSlice || !sliceCtx) return;
-  const N = state.N, M = N*N*N, G2 = 200;          // 2D image resolution
+  const N = state.N, G2 = 200;                     // 2D image resolution
   const grid = new Float32Array(G2*G2);
   const p = [0,0,0];
   const ax = SLICE_AXIS, u = (ax+1)%3, v = (ax+2)%3;
-  // column density: integrate ALL particles along the axis (CIC in 2D)
-  for (let i = 0; i < M; i++){
-    displacedPos(i, p);
-    const gu = p[u]/BOX*G2, gv = p[v]/BOX*G2;
-    const iu = gu|0, iv = gv|0, du = gu-iu, dv = gv-iv;
-    grid[((iv)%G2)*G2 + (iu)%G2]           += (1-du)*(1-dv);
-    grid[((iv)%G2)*G2 + (iu+1)%G2]         += du*(1-dv);
-    grid[((iv+1)%G2)*G2 + (iu)%G2]         += (1-du)*dv;
-    grid[((iv+1)%G2)*G2 + (iu+1)%G2]       += du*dv;
-  }
+  // column density: integrate particles along the axis (CIC in 2D);
+  // during playback the biggest grid is strided down to hold the frame rate
+  const step = (fast && N >= 128) ? 2 : 1;
+  for (let iz = 0; iz < N; iz += step)
+    for (let iy = 0; iy < N; iy += step)
+      for (let ix = 0; ix < N; ix += step){
+        displacedPos((iz*N + iy)*N + ix, p);
+        const gu = p[u]/BOX*G2, gv = p[v]/BOX*G2;
+        const iu = gu|0, iv = gv|0, du = gu-iu, dv = gv-iv;
+        grid[((iv)%G2)*G2 + (iu)%G2]           += (1-du)*(1-dv);
+        grid[((iv)%G2)*G2 + (iu+1)%G2]         += du*(1-dv);
+        grid[((iv+1)%G2)*G2 + (iu)%G2]         += (1-du)*dv;
+        grid[((iv+1)%G2)*G2 + (iu+1)%G2]       += du*dv;
+      }
   // light separable Gaussian smoothing for a clean SPH-like look
   const sm = new Float32Array(G2*G2), w = [0.25,0.5,0.25];
   for (let y=0;y<G2;y++)for(let x=0;x<G2;x++){let s=0;
     for(let k=-1;k<=1;k++) s+=grid[y*G2+((x+k+G2)%G2)]*w[k+1]; sm[y*G2+x]=s;}
   for (let y=0;y<G2;y++)for(let x=0;x<G2;x++){let s=0;
     for(let k=-1;k<=1;k++) s+=sm[((y+k+G2)%G2)*G2+x]*w[k+1]; grid[y*G2+x]=s;}
-  let mx = 0; for (let i = 0; i < grid.length; i++) if (grid[i] > mx) mx = grid[i];
+  // contrast-stretch between low/high percentiles instead of dividing by the
+  // single brightest cluster pixel, so filaments and sheets stay visible
+  const samp = [];
+  for (let i = 0; i < grid.length; i += 7) samp.push(grid[i]);
+  samp.sort((x, y) => x - y);
+  const lo = samp[(samp.length*0.05)|0];
+  const hi = Math.max(samp[(samp.length*0.998)|0]*1.25, lo*1.25 + 1e-6);
   const img = sliceCtx.createImageData(G2, G2);
   const ramp = t => {
     const cs = [[5,11,33],[13,51,107],[31,133,168],[247,168,77],[255,247,224]];
@@ -999,9 +1083,9 @@ function drawSlice(){
     const c0 = cs[k], c1 = cs[k+1];
     return [c0[0]+(c1[0]-c0[0])*fr, c0[1]+(c1[1]-c0[1])*fr, c0[2]+(c1[2]-c0[2])*fr];
   };
-  const lmx = Math.log(1+mx);
+  const l0 = Math.log(1+lo), l1 = Math.log(1+hi);
   for (let i = 0; i < grid.length; i++){
-    const t = mx > 0 ? Math.log(1+grid[i])/lmx : 0;
+    const t = Math.min(1, Math.max(0, (Math.log(1+grid[i]) - l0)/(l1 - l0)));
     const c = ramp(t);
     img.data[4*i]=c[0]; img.data[4*i+1]=c[1]; img.data[4*i+2]=c[2]; img.data[4*i+3]=255;
   }
@@ -1015,16 +1099,42 @@ function drawSlice(){
 
 let sliceTimer = 0, prodTimer = 0;
 function refreshProducts(){
+  if (state.playing) return;                         // handled by animateProducts
   const needVol = (state.render === 'volume');
   const needPk = state.pkMatter || state.pkHalos || state.pkGals;
   if (!state.showSlice && !state.showHalos && !state.showGals && !needVol && !needPk) return;
   clearTimeout(prodTimer);
   prodTimer = setTimeout(() => {
+    if (state.playing) return;                       // play may start mid-debounce
     if (state.showSlice) drawSlice();
     if (state.showHalos || state.showGals || state.pkHalos || state.pkGals) updateHalos();
     if (state.render === 'volume') buildVolTex();
     if (needPk) measurePk();
   }, 70);                                            // throttle the CPU passes
+}
+
+/* Live products while "Grow the universe" plays. The debounce above never
+   fires at 60 fps (it is reset every frame), so playback uses a leading-edge
+   throttle instead, with intervals scaled by the particle count. */
+const prodLast = { slice: 0, halos: 0, vol: 0, pk: 0 };
+function animateProducts(now){
+  const cost = Math.max(1, Math.pow(state.N/64, 3));
+  const needPk = state.pkMatter || state.pkHalos || state.pkGals;
+  const sliceOn = state.showSlice && sliceCanvas && sliceCanvas.offsetParent !== null;
+  const pkOn = needPk && pkCanvas.offsetParent !== null;   // insets hidden on mobile
+  if (sliceOn && now - prodLast.slice >= 110*Math.min(cost, 2)){
+    prodLast.slice = now; drawSlice(true);
+  }
+  if ((state.showHalos || state.showGals || state.pkHalos || state.pkGals) &&
+      now - prodLast.halos >= 420*cost){
+    prodLast.halos = now; updateHalos();
+  }
+  if (state.render === 'volume' && now - prodLast.vol >= 200*cost){
+    prodLast.vol = now; buildVolTex();
+  }
+  if (pkOn && now - prodLast.pk >= 650*cost){
+    prodLast.pk = now; measurePk();
+  }
 }
 
 /* -------------- proxy halos + HOD galaxies (overlay) ---------------- */
@@ -1300,7 +1410,7 @@ function drawPk(){
 const FS_VERT = `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.0,1.0); }`;
 const post = { on: true };
 let rtScene, rtA, rtB, fsScene, fsCam, fsQuad;
-const brightMat = new THREE.ShaderMaterial({ uniforms:{ tDiffuse:{value:null}, thr:{value:0.55} },
+const brightMat = new THREE.ShaderMaterial({ uniforms:{ tDiffuse:{value:null}, thr:{value:0.60} },
   vertexShader: FS_VERT, fragmentShader: `
     uniform sampler2D tDiffuse; uniform float thr; varying vec2 vUv;
     void main(){ vec3 c=texture2D(tDiffuse,vUv).rgb; float l=dot(c,vec3(0.299,0.587,0.114));
@@ -1443,13 +1553,21 @@ function loop(t){
   if (morphT0 >= 0){
     const u = Math.min(1, (t - morphT0)/MORPH_MS);
     uniforms.uMix.value = easeInOut(u);
+    // fade web-class colors in with the morph: mid-morph the mixed I1 is not
+    // consistent with the un-mixed inv2/inv3, so classes are only exact at u=1
+    uniforms.uWeb.value = (state.colorMode === 'web' ? 1 : 0)*easeInOut(u);
     if (u >= 1) morphT0 = -1;
   }
   if (state.playing){
-    state.a = Math.min(1, state.a + dt*0.22);
+    state.a = Math.min(1, state.a + dt*0.15);
     sliders.a.value = state.a;
     refreshLabels(); refreshAmp();
-    if (state.a >= 1){ state.playing = false; $('play').innerHTML = '&#9654; Grow the universe'; }
+    animateProducts(t);                         // keep insets/overlays growing too
+    if (state.a >= 1){
+      state.playing = false;
+      $('play').innerHTML = '&#9654; Grow the universe';
+      refreshProducts();                        // final full-quality pass
+    }
   }
   if (!dragging && !reducedMotion && t - cam.lastUser > 2500)
     cam.theta += dt*0.05;                       // gentle idle rotation
@@ -1472,7 +1590,57 @@ addEventListener('resize', () => {
   resizePost();
 });
 
+/* -------- deep-link + embed via URL query params --------
+   e.g. ?embed=1&preset=planck&s8=1.5&order=2&color=web&a=0.5
+   Runs before the first compute so the box opens in the requested state. */
+function applyURLParams(){
+  const q = new URLSearchParams(location.search);
+  if (![...q.keys()].length) return;
+  if (q.has('embed') && q.get('embed') !== '0') document.body.classList.add('embed');
+
+  const preset = q.get('preset');
+  if (preset && presets[preset]) Object.assign(state, presets[preset]);
+
+  const clamp = (key, lo, hi) => {
+    const v = parseFloat(q.get(key));
+    return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : null;
+  };
+  let v;
+  if ((v = clamp('om', 0.10, 0.60)) !== null) state.om = v;
+  if ((v = clamp('s8', 0.30, 1.50)) !== null) state.s8 = v;
+  if ((v = clamp('ns', 0.70, 1.30)) !== null) state.ns = v;
+  if ((v = clamp('a',  0.05, 1.00)) !== null) state.a  = v;
+  sliders.om.value = state.om; sliders.s8.value = state.s8;
+  sliders.ns.value = state.ns; sliders.a.value  = state.a;
+
+  const order = q.get('order');
+  if (order === '1' || order === '2'){
+    state.order = +order;
+    document.querySelectorAll('[data-order]').forEach(x =>
+      x.classList.toggle('primary', +x.dataset.order === state.order));
+    const oh = $('orderHint');
+    if (oh) oh.textContent = state.order === 2
+      ? 'Second-order: stronger collapse, sharper knots — closer to N-body.'
+      : 'Displacement model. 2LPT sharpens filaments and knots.';
+  }
+
+  const color = q.get('color') || (q.has('web') && q.get('web') !== '0' ? 'web' : null);
+  if (color === 'web' || color === 'density'){
+    state.colorMode = color;
+    uniforms.uWeb.value = color === 'web' ? 1 : 0;
+    document.querySelectorAll('[data-color]').forEach(x =>
+      x.classList.toggle('primary', x.dataset.color === state.colorMode));
+    const ch = $('colorHint');
+    if (ch) ch.innerHTML = color === 'web'
+      ? 'Collapsed axes: <span style="color:#9cc94a">1 &rarr; sheets</span> &middot; ' +
+        '<span style="color:#5cb1ff">2 &rarr; filaments</span> &middot; ' +
+        '<span style="color:#ffb454">3 &rarr; nodes</span> &middot; voids stay dark.'
+      : 'Splat colors follow the local (single-stream) density.';
+  }
+}
+
 /* ------------------------------ boot -------------------------------- */
+applyURLParams();
 refreshLabels();
 rebuildAll('generating initial conditions…');
 applyCamera();
