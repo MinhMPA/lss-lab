@@ -1624,6 +1624,14 @@ function applyURLParams(){
       : 'Displacement model. 2LPT sharpens filaments and knots.';
   }
 
+  const render = q.get('render');
+  if (render === 'volume' || render === 'splat'){
+    // volume needs the density field, which exists only after the boot
+    // rebuildAll() completes; its 30 ms timer is registered after this one,
+    // and JS timer ordering runs this callback after that synchronous work.
+    setTimeout(() => setRenderMode(render), 100);
+  }
+
   const color = q.get('color') || (q.has('web') && q.get('web') !== '0' ? 'web' : null);
   if (color === 'web' || color === 'density'){
     state.colorMode = color;
