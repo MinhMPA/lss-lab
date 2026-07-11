@@ -82,8 +82,11 @@
 
   #togglePanel{display:none;position:fixed;top:14px;right:14px;z-index:7}
 
-  /* embed mode (?embed=1): hide page chrome for clean iframe embedding */
+  /* embed mode (?embed=1): hide page chrome for clean iframe embedding.
+     Insets are hidden too — in a small iframe the fixed-position P(k) box
+     covers the scene; ?pk=1 re-enables it. */
   body.embed header, body.embed footer{display:none}
+  body.embed #pkbox{display:none}
 
   @media (max-width:760px){
     header{max-width:70vw}
@@ -1622,6 +1625,12 @@ function applyURLParams(){
     if (oh) oh.textContent = state.order === 2
       ? 'Second-order: stronger collapse, sharper knots — closer to N-body.'
       : 'Displacement model. 2LPT sharpens filaments and knots.';
+  }
+
+  if (q.get('pk') === '1'){
+    // opt the P(k) inset back in within embed mode (inline style beats the CSS)
+    const pb = document.getElementById('pkbox');
+    if (pb) pb.style.display = 'block';
   }
 
   const render = q.get('render');
