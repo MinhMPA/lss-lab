@@ -87,6 +87,15 @@
      covers the scene; ?pk=1 re-enables it. */
   body.embed header, body.embed footer{display:none}
   body.embed #pkbox{display:none}
+  /* in typical blog-width iframes the fixed side panel would cover the scene:
+     collapse it behind the Controls button (same pattern as the mobile layout) */
+  @media (max-width:1080px){
+    body.embed #togglePanel{display:block;background:var(--panel)}
+    body.embed #panel{top:auto;bottom:0;left:0;right:0;width:100%;
+      border-radius:14px 14px 0 0;max-height:55vh;
+      transform:translateY(110%);transition:transform .25s}
+    body.embed #panel.open{transform:translateY(0)}
+  }
 
   @media (max-width:760px){
     header{max-width:70vw}
