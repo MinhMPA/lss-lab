@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How fast is light?</title>
+<style>
+  :root{
+    --sky:#0B1026; --sky-hi:#141C42; --panel:#0F1531;
+    --ink:#E9ECFA; --muted:#98A0C6; --line:#26305C;
+    --photon:#FFD166; --photon-hot:#FFF3C4; --red:#FF6B5E;
+    --mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
+    --body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --display:"Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:radial-gradient(120% 90% at 50% -10%, var(--sky-hi) 0%, var(--sky) 55%) fixed var(--sky);
+    color:var(--ink); font:15px/1.55 var(--body);
+    -webkit-font-smoothing:antialiased;
+  }
+  .app{max-width:760px; margin:0 auto; padding:22px 16px 30px}
+
+  header h1{
+    font-family:var(--display); font-weight:600; letter-spacing:.01em;
+    font-size:clamp(26px,6vw,34px); margin:0 0 4px;
+  }
+  .sub{margin:0 0 14px; color:var(--muted); font-size:13.5px}
+  .chip{
+    font-family:var(--mono); font-size:11.5px; color:var(--photon);
+    border:1px solid var(--line); border-radius:999px; padding:2px 9px;
+    white-space:nowrap; display:inline-block; margin-left:2px;
+  }
+
+  .tabs{display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px}
+  .tabs button{
+    font-family:var(--mono); font-size:12px; letter-spacing:.02em;
+    color:var(--muted); background:transparent; border:1px solid var(--line);
+    border-radius:999px; padding:7px 12px; cursor:pointer;
+  }
+  .tabs button:hover{border-color:var(--photon); color:var(--ink)}
+  .tabs button[aria-selected="true"]{
+    background:var(--photon); border-color:var(--photon); color:#1A1608; font-weight:700;
+  }
+
+  .stage{
+    position:relative; height:clamp(218px,58vw,300px);
+    border:1px solid var(--line); border-radius:14px; overflow:hidden;
+    background:linear-gradient(180deg,#0C1230 0%,#0A0F26 100%);
+  }
+  .stage canvas{position:absolute; inset:0; width:100%; height:100%; display:block}
+  .scene-title{
+    position:absolute; top:10px; left:12px; font-family:var(--mono);
+    font-size:10px; letter-spacing:.14em; color:var(--muted);
+  }
+  .endcard{
+    position:absolute; inset:0; display:flex; flex-direction:column; gap:12px;
+    align-items:center; justify-content:center; text-align:center; padding:20px;
+    background:rgba(10,15,38,.78); backdrop-filter:blur(3px);
+  }
+  .endcard[hidden]{display:none}
+  .endcard p{margin:0; max-width:38ch; font-size:14.5px; line-height:1.5}
+  .endcard button{
+    font-family:var(--mono); font-size:12.5px; font-weight:700; color:#1A1608;
+    background:var(--photon); border:0; border-radius:10px; padding:9px 16px; cursor:pointer;
+  }
+  .endcard .hint{font-size:12px; color:var(--muted)}
+
+  .clockrow{display:flex; justify-content:space-between; align-items:flex-end; gap:12px; margin-top:14px}
+  .clock-label{font-family:var(--mono); font-size:10px; letter-spacing:.16em; color:var(--muted); text-transform:uppercase}
+  .clock{
+    font-family:var(--mono); font-variant-numeric:tabular-nums;
+    font-size:clamp(26px,7.5vw,38px); line-height:1.15; color:var(--photon-hot);
+    text-shadow:0 0 18px rgba(255,209,102,.25);
+  }
+  .dist{font-family:var(--mono); font-size:12px; color:var(--muted); min-height:1.3em}
+  .badge-wrap{text-align:right; flex-shrink:0}
+  .badge-label{font-family:var(--mono); font-size:10px; letter-spacing:.14em; color:var(--muted); text-transform:uppercase; margin-bottom:4px}
+  .badge{
+    font-family:var(--mono); font-size:13px; font-weight:700; color:var(--photon);
+    border:1px solid var(--line); border-radius:9px; padding:6px 10px; display:inline-block;
+    background:var(--panel); white-space:nowrap;
+  }
+
+  .caption{
+    margin-top:12px; min-height:44px; font-size:14px;
+    border-left:2px solid var(--photon); padding:2px 0 2px 11px;
+    transition:opacity .25s ease;
+  }
+  .caption.dim{opacity:0}
+
+  .controls{display:flex; align-items:center; gap:8px; margin-top:12px; flex-wrap:wrap}
+  .controls button{
+    font-family:var(--mono); font-size:12.5px; cursor:pointer;
+    border:1px solid var(--line); border-radius:10px; padding:8px 14px;
+    background:var(--panel); color:var(--ink);
+  }
+  .controls button:hover{border-color:var(--photon)}
+  .controls button.primary{background:var(--photon); border-color:var(--photon); color:#1A1608; font-weight:700}
+  .speeds{display:flex; gap:6px; margin-left:auto}
+  .speeds button{padding:8px 10px; color:var(--muted)}
+  .speeds button[aria-pressed="true"]{color:#1A1608; background:var(--photon); border-color:var(--photon); font-weight:700}
+  .speeds.off{visibility:hidden}
+
+  .fact{margin:14px 0 0; color:var(--muted); font-size:12.5px; line-height:1.55}
+  .ladder{
+    margin-top:18px; padding-top:12px; border-top:1px solid var(--line);
+    font-family:var(--mono); font-size:11px; line-height:1.8; color:var(--muted); letter-spacing:.02em;
+  }
+  .ladder b{color:var(--photon); font-weight:600}
+
+  button:focus-visible{outline:2px solid var(--photon); outline-offset:2px}
+  @media (prefers-reduced-motion: reduce){ .caption{transition:none} }
+</style>
+</head>
+<body>
+<main class="app">
+  <header>
+    <h1>How fast is light?</h1>
+    <p class="sub">One pulse of light, from the Moon to the edge of the Universe. <span class="chip">c&nbsp;=&nbsp;299,792&nbsp;km&nbsp;per&nbsp;second</span></p>
+  </header>
+
+  <nav class="tabs" id="tabs" role="tablist" aria-label="Choose a scale"></nav>
+
+  <section class="stage" aria-label="Animation stage">
+    <canvas id="cv"></canvas>
+    <div class="scene-title" id="sceneTitle"></div>
+    <div class="endcard" id="endcard" hidden>
+      <p id="endtext"></p>
+      <button id="replay" type="button">Replay</button>
+      <div class="hint">…or pick the next scale above</div>
+    </div>
+  </section>
+
+  <section class="clockrow">
+    <div>
+      <div class="clock-label">Light has been traveling for</div>
+      <div class="clock" id="clock">0.00 s</div>
+      <div class="dist" id="dist"></div>
+    </div>
+    <div class="badge-wrap">
+      <div class="badge-label">You are watching at</div>
+      <div class="badge" id="badge">REAL TIME</div>
+    </div>
+  </section>
+
+  <div class="caption" id="cap" aria-live="polite"></div>
+
+  <section class="controls">
+    <button id="play" class="primary" type="button">Pause</button>
+    <button id="restart" type="button">Restart</button>
+    <div class="speeds" id="speeds" role="group" aria-label="Playback speed"></div>
+  </section>
+
+  <p class="fact" id="fact"></p>
+
+  <footer class="ladder">
+    Light-travel times, door to door — Moon <b>1.3&nbsp;s</b> · Sun <b>8.3&nbsp;min</b> ·
+    Neptune <b>4.2&nbsp;h</b> · Proxima&nbsp;Cen <b>4.2&nbsp;yr</b> · galactic&nbsp;center <b>26,000&nbsp;yr</b> ·
+    Andromeda <b>2.5&nbsp;Myr</b> · edge of the observable Universe <b>13.8&nbsp;Gyr</b>
+  </footer>
+</main>
+
+<script>
+(() => {
+'use strict';
+
+/* ---------- physical constants ---------- */
+const C   = 299792.458;      // km/s
+const LY  = 3.15576e7;       // one light-year expressed in light-SECONDS (Julian year)
+const AU  = 499.004784;      // one au expressed in light-seconds
+const GYR = 1e9 * LY;        // seconds in 10^9 years
+
+/* flat LCDM, matter+Lambda, for the cosmological counters (schematic) */
+const OM = 0.315, OL = 0.685, HINV = 14.43;               // 1/H0 in Gyr  ->  t0 = 13.79 Gyr
+const aOf = t => Math.cbrt(OM / OL) *
+                 Math.pow(Math.sinh(1.5 * Math.sqrt(OL) * t / HINV), 2 / 3);
+const T0 = 13.79, TE = 4.7e-4, CHI = 45.6;                // Gyr, Gyr, comoving Gly to the CMB
+
+const PAL = { ink:'#E9ECFA', muted:'#98A0C6', line:'#26305C',
+              photon:'#FFD166', hot:'#FFF3C4' };
+
+/* ---------- formatting ---------- */
+const fmtInt = n => Math.round(n).toLocaleString('en-US');
+function fmtTime(s){
+  if (s < 0.1)   return (s * 1000).toFixed(0) + ' ms';
+  if (s < 60)    return s.toFixed(2) + ' s';
+  if (s < 3600)  return Math.floor(s / 60) + ' min ' +
+                        String(Math.floor(s % 60)).padStart(2, '0') + ' s';
+  if (s < 2 * 86400) return Math.floor(s / 3600) + ' h ' +
+                        String(Math.floor((s % 3600) / 60)).padStart(2, '0') + ' min';
+  const y = s / LY;
+  if (y < 1)    return Math.floor(s / 86400) + ' days';
+  if (y < 100)  return y.toFixed(1) + ' years';
+  if (y < 1e6)  return fmtInt(y) + ' years';
+  if (y < 1e9)  return (y / 1e6).toPrecision(3) + ' million years';
+  return (y / 1e9).toPrecision(3) + ' billion years';
+}
+
+/* ---------- scene definitions ---------- */
+const SCENES = [
+{ id:'earth', tab:'Moon', title:'EARTH \u2192 MOON \u00b7 DRAWN TO SCALE', mode:'bounce',
+  D: 1.2822, spd: 1, badge:'REAL TIME', lock:true,
+  intro:'This is real time. Light really is this \u201cslow\u201d.',
+  fact:'Earth, the Moon and the gap between them are drawn to scale. Light covers about 30 cm every nanosecond and could lap Earth 7.5 times in one second \u2014 yet the Moon is still 1.28 s away. Apollo astronauts heard Houston on a 1.3-second delay.',
+  dist: s => fmtInt(s * C) + ' km flown \u00b7 ' + (s * C / 40075).toFixed(1) + ' laps of Earth' },
+
+{ id:'sunlight', tab:'Rocky Planets', title:'SUN \u2192 MARS \u00b7 THE ROCKY PLANETS', mode:'linear',
+  D: 1.524 * AU, spd: 1.524 * AU / 7, badge:'1 s \u2248 1.8 min',
+  intro:'Same screen, bigger leap: the Sun\u2013Mars gap is ~600\u00d7 the Earth\u2013Moon distance, so watch the dot move slower. Light\u2019s speed hasn\u2019t changed \u2014 the distance has.',
+  fact:'The light warming your skin right now left the Sun about eight minutes ago \u2014 if the Sun blinked out, you would not know for eight minutes. Planet dots mark orbits, not sizes.',
+  dist: s => (s / 60).toFixed(1) + ' light-minutes from the Sun',
+  ms:[
+    { d:0.387*AU, tick:1, c:'#9C9C94', cap:'Mercury \u2014 3 minutes of sunlight' },
+    { d:0.723*AU, tick:1, c:'#E6C98F', cap:'Venus \u2014 6 minutes' },
+    { d:1.000*AU, tick:1, c:'#5B9BD5', n:'Earth', lv:1, cap:'Earth \u2014 8 min 19 s. Sunlight is always eight minutes old.' },
+    { d:1.524*AU, tick:1, c:'#D96C4A', n:'Mars', lv:0 } ],
+  end:'Mars \u2014 12 min 40 s. That delay is why rovers can\u2019t be driven live with a joystick: you send a command, then wait.' },
+
+{ id:'solar', tab:'Solar system', title:'SUN \u2192 NEPTUNE', mode:'linear',
+  D: 30.07 * AU, spd: 30.07 * AU / 10, badge:'1 s \u2248 25 min',
+  intro:'Bigger leap, slower dot \u2014 the pattern holds. The slowdown you see is compressed to stay watchable; the badge gives the true rate.',
+  fact:'Planet dots mark orbits, not sizes. Past Jupiter it is mostly emptiness \u2014 the outer solar system is a great deal of nothing.',
+  dist: s => (s / AU).toFixed(2) + ' au from the Sun',
+  ms:[
+    { d:0.387*AU, tick:1, c:'#9C9C94' },
+    { d:0.723*AU, tick:1, c:'#E6C98F' },
+    { d:1.000*AU, tick:1, c:'#5B9BD5' },
+    { d:1.524*AU, tick:1, c:'#D96C4A' },
+    { d:5.203*AU, tick:1, c:'#D9A066', n:'Jupiter', lv:0, cap:'Jupiter \u2014 43 min' },
+    { d:9.537*AU, tick:1, c:'#E0C48F', n:'Saturn',  lv:1, cap:'Saturn \u2014 1 h 19 min' },
+    { d:19.19*AU, tick:1, c:'#8FD0D9', n:'Uranus',  lv:0, cap:'Uranus \u2014 2 h 40 min' },
+    { d:30.07*AU, tick:1, c:'#4A6CD9', n:'Neptune', lv:1 } ],
+  end:'Neptune \u2014 4 h 10 min after leaving the Sun. Voyager 1, three times farther out, is a full light-day away.' },
+
+{ id:'galaxy', tab:'Milky Way', title:'SUN \u2192 GALACTIC CENTER', mode:'linear',
+  D: 26000 * LY, spd: 26000 * LY / 24, badge:'1 s \u2248 1,080 yr',
+  intro:'The view flips \u2014 the light is now inbound, from the galactic center to Earth. A far bigger leap again, so the dot slows to a crawl.',
+  fact:'The stellar disk is about 100,000 light-years across. A one-way radio \u201chello\u201d across the Galaxy outlasts the whole of recorded history \u2014 there and back is impossible conversation.',
+  dist: s => fmtInt((S.D - s) / LY) + ' light-years from Earth',
+  ms:[
+    { d:19500*LY, tick:1, c:'#8FD0D9', n:'Crab Nebula',  lv:1, cap:'Passing the Crab remnant \u2014 6,500 light-years from Earth' },
+    { d:24656*LY, tick:1, c:'#C48FD9', n:'Orion Nebula', lv:0, cap:'Passing the Orion Nebula \u2014 1,340 light-years from Earth' } ],
+  end:'Home. This light left the galactic center 26,000 years ago \u2014 when Ice-Age humans were painting caves \u2014 and only now reaches Earth.' },
+
+{ id:'local', tab:'Local Group', title:'MILKY WAY \u2192 ANDROMEDA', mode:'linear',
+  D: 2.5e6 * LY, spd: 2.5e6 * LY / 29, badge:'1 s \u2248 86,000 yr',
+  intro:'Andromeda\u2019s light, inbound \u2014 bigger still, slower still. The dot barely moves; the gap is that vast.',
+  fact:'Galaxies here sit roughly 25 of their own diameters apart \u2014 and Andromeda is the most distant thing your naked eye can see. It is also falling toward us: in ~4.5 billion years the two galaxies merge.',
+  dist: s => ((S.D - s) / LY / 1e6).toFixed(2) + ' million light-years from Earth',
+  ms:[
+    { d:2.337e6*LY, tick:1, c:'#B9C2E8', n:'LMC', lv:0, cap:'Nearly here \u2014 the Magellanic Clouds are only ~180,000 light-years from us' } ],
+  end:'Home. The Andromeda light reaching your eye tonight left 2.5 million years ago \u2014 when our ancestors were chipping the first stone tools.' },
+
+{ id:'cosmo', tab:'Universe', title:'FIRST LIGHT (CMB) \u2192 EARTH \u00b7 SCHEMATIC', mode:'cosmo',
+  D: (T0 - TE) * GYR, spd: (T0 - TE) * GYR / 36, badge:'1 s \u2248 383 million yr',
+  intro:'The oldest light there is \u2014 the slowest dot of all, across the biggest leap. And space itself stretches while it flies.',
+  fact:'Schematic, not to scale. Space expands while the light is en route, so its birthplace ends up ~46 billion light-years away even though the trip took \u201conly\u201d 13.8 billion years \u2014 and the wave itself is stretched more than a thousandfold, from a hot orange glow into microwaves.',
+  dist: s => { const d = CHI * aOf(TE + s / GYR);
+               return 'its birthplace is now ' +
+                      (d < 1 ? fmtInt(d * 1000) + ' million' : d.toFixed(1) + ' billion') +
+                      ' light-years away'; },
+  ms:[
+    { d:0.20*GYR, cap:'\u007e200 million years in: the first stars ignite' },
+    { d:1.00*GYR, cap:'Infant galaxies assemble \u2014 and ride the expansion apart. Watch the pulse redden: the wave is being stretched.' },
+    { d:9.20*GYR, cap:'9 billion years in: the Sun and Earth form (4.6 billion years ago)' } ],
+  end:'Arrival, 13.8 billion years later: the light is stretched \u00d71,100 into microwaves \u2014 the cosmic microwave background \u2014 and its birthplace now lies ~46 billion light-years away.' }
+];
+
+/* ---------- dom ---------- */
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+const el = { tabs:$('tabs'), title:$('sceneTitle'), end:$('endcard'), endtext:$('endtext'),
+             replay:$('replay'), clock:$('clock'), dist:$('dist'), badge:$('badge'),
+             cap:$('cap'), play:$('play'), restart:$('restart'), speeds:$('speeds'), fact:$('fact') };
+
+const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------- state ---------- */
+let S = SCENES[0];
+let sim = 0, prevSim = 0, playing = !RM, done = false, mult = 1, lastTs = 0;
+let trail = [], capQ = [], capHold = 0;
+let W = 0, H = 0, stars = null, cosmoGal = null;
+
+/* ---------- ui construction ---------- */
+SCENES.forEach((s, i) => {
+  const b = document.createElement('button');
+  b.type = 'button'; b.role = 'tab'; b.textContent = s.tab;
+  b.addEventListener('click', () => setScene(i));
+  el.tabs.appendChild(b);
+});
+[1, 2, 4].forEach(v => {
+  const b = document.createElement('button');
+  b.type = 'button'; b.textContent = '\u00d7' + v;
+  b.addEventListener('click', () => {
+    mult = v;
+    [...el.speeds.children].forEach(c => c.setAttribute('aria-pressed', c === b));
+    updateBadge();
+  });
+  el.speeds.appendChild(b);
+});
+
+function setScene(i){
+  S = SCENES[i]; sim = prevSim = 0; trail = []; capQ = []; done = false;
+  mult = 1;
+  [...el.speeds.children].forEach((c, j) => c.setAttribute('aria-pressed', j === 0));
+  el.speeds.classList.toggle('off', !!S.lock);
+  [...el.tabs.children].forEach((c, j) => c.setAttribute('aria-selected', j === i));
+  el.title.textContent = S.title;
+  el.fact.textContent = S.fact;
+  el.end.hidden = true;
+  el.cap.textContent = RM ? 'Press Play to launch the pulse.' : S.intro;
+  capHold = 1.6;
+  playing = !RM;
+  stars = null; cosmoGal = null;
+  syncPlayBtn();
+}
+function syncPlayBtn(){
+  el.play.textContent = done ? 'Replay' : (playing ? 'Pause' : 'Play');
+}
+el.play.addEventListener('click', () => {
+  if (done){ const i = SCENES.indexOf(S); setScene(i); playing = true; }
+  else playing = !playing;
+  syncPlayBtn();
+});
+el.restart.addEventListener('click', () => { const i = SCENES.indexOf(S); setScene(i); playing = true; syncPlayBtn(); });
+el.replay .addEventListener('click', () => { const i = SCENES.indexOf(S); setScene(i); playing = true; syncPlayBtn(); });
+
+function updateBadge(){
+  el.badge.textContent = S.badge + (mult > 1 && !S.lock ? '  \u00d7' + mult : '');
+}
+
+/* ---------- captions ---------- */
+function pushCap(t){ capQ.push(t); }
+function fireCaps(){
+  if (S.ms) for (const m of S.ms)
+    if (m.cap && prevSim < m.d && sim >= m.d) pushCap(m.cap);
+  if (S.mode === 'bounce'){
+    const a = Math.floor(sim / S.D), pa = Math.floor(prevSim / S.D);
+    if (a > pa && a <= 3)
+      pushCap(a % 2 === 1 ? 'Touch \u2014 the Moon, 1.28 s one way'
+                          : 'Back at Earth \u2014 round trip 2.56 s');
+  }
+  prevSim = sim;
+}
+function drainCaps(dt){
+  capHold -= dt;
+  if (capHold <= 0 && capQ.length){
+    el.cap.classList.add('dim');
+    const t = capQ.shift();
+    setTimeout(() => { el.cap.textContent = t; el.cap.classList.remove('dim'); }, RM ? 0 : 180);
+    capHold = 1.5;
+  }
+}
+
+/* ---------- finish ---------- */
+function finish(){
+  done = true; playing = false;
+  el.endtext.textContent = S.end;
+  el.end.hidden = false;
+  syncPlayBtn();
+}
+
+/* ---------- drawing helpers ---------- */
+function makeStars(){
+  const n = { earth:80, solar:70, galaxy:230, local:46, cosmo:0 }[S.id];
+  const a = [];
+  for (let i = 0; i < n; i++){
+    let x = Math.random();
+    if (S.id === 'galaxy') x = Math.pow(x, 0.5);        // pile up toward the bulge
+    a.push({ x: x * W, y: Math.random() * H,
+             r: Math.random() * 1.1 + 0.3,
+             al: Math.random() * 0.5 + 0.15 });
+  }
+  return a;
+}
+function makeCosmoGal(){
+  const a = [];
+  for (let i = 0; i < 26; i++)
+    a.push({ bx: 60 + Math.random() * (W - 130),
+             y: 24 + Math.random() * (H - 60),
+             r: 1.6 + Math.random() * 2.6,
+             al: 0.25 + Math.random() * 0.4 });
+  return a;
+}
+function drawStars(){
+  if (!stars) stars = makeStars();
+  for (const s of stars){
+    ctx.globalAlpha = s.al;
+    ctx.fillStyle = '#C9D2F2';
+    ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 7); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+function glowDot(x, y, r, core, halo){
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, core); g.addColorStop(1, halo);
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+}
+function label(t, x, y, align, col, size){
+  ctx.fillStyle = col || PAL.muted;
+  ctx.font = (size || 10) + 'px ui-monospace, Menlo, monospace';
+  ctx.textAlign = align || 'center';
+  ctx.fillText(t, x, y);
+  ctx.textAlign = 'left';
+}
+function drawTrail(col){
+  for (let i = 0; i < trail.length; i++){
+    const p = trail[i], f = (i + 1) / trail.length;
+    ctx.globalAlpha = 0.30 * f;
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 1.2 + 2.6 * f, 0, 7); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+function pushTrail(x, y){
+  if (!RM){ trail.push({ x, y }); if (trail.length > 22) trail.shift(); }
+}
+function galaxySprite(x, y, rx, ry, rot, bright){
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+  g.addColorStop(0, 'rgba(240,236,255,' + (0.85 * bright) + ')');
+  g.addColorStop(0.35, 'rgba(180,190,235,' + (0.4 * bright) + ')');
+  g.addColorStop(1, 'rgba(180,190,235,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, 7); ctx.fill();
+  ctx.restore();
+}
+
+/* ---------- scene renderers ---------- */
+function drawEarthScene(){
+  drawStars();
+  const yc = H * 0.52, x0 = 36, x1 = W - 28;
+  const k = (x1 - x0) / 384400;
+  const rE = Math.max(4, 6371 * k), rM = Math.max(1.6, 1737 * k);
+
+  ctx.strokeStyle = 'rgba(152,160,198,.25)'; ctx.setLineDash([2, 5]);
+  ctx.beginPath(); ctx.moveTo(x0 + rE, yc); ctx.lineTo(x1 - rM, yc); ctx.stroke();
+  ctx.setLineDash([]);
+
+  glowDot(x0, yc, rE * 2.2, 'rgba(91,155,213,.5)', 'rgba(91,155,213,0)');
+  const ge = ctx.createRadialGradient(x0 - rE * 0.3, yc - rE * 0.3, 0, x0, yc, rE);
+  ge.addColorStop(0, '#7FB4E8'); ge.addColorStop(1, '#1E4E8C');
+  ctx.fillStyle = ge; ctx.beginPath(); ctx.arc(x0, yc, rE, 0, 7); ctx.fill();
+  label('Earth', x0, yc + rE + 16);
+
+  ctx.fillStyle = '#B9BDC9'; ctx.beginPath(); ctx.arc(x1, yc, rM, 0, 7); ctx.fill();
+  label('Moon \u00b7 384,400 km', x1, yc + rM + 16, 'right');
+
+  const A = x0 + rE + 3, B = x1 - rM - 3;
+  const ph = sim % (2 * S.D);
+  const p = ph < S.D ? ph / S.D : 2 - ph / S.D;
+  const x = A + p * (B - A);
+  pushTrail(x, yc); drawTrail(PAL.photon);
+  glowDot(x, yc, 9, PAL.hot, 'rgba(255,209,102,0)');
+  ctx.fillStyle = PAL.hot; ctx.beginPath(); ctx.arc(x, yc, 2.4, 0, 7); ctx.fill();
+}
+
+function drawLinearScene(){
+  drawStars();
+  const yc = H * 0.60, padL = 30, padR = 36;
+  const X = d => padL + (d / S.D) * (W - padL - padR);
+
+  ctx.strokeStyle = 'rgba(38,48,92,.9)';
+  ctx.beginPath(); ctx.moveTo(padL, yc); ctx.lineTo(W - padR, yc); ctx.stroke();
+
+  /* source + destination dressing */
+  if (S.id === 'solar' || S.id === 'sunlight'){
+    glowDot(padL - 4, yc, 26, 'rgba(255,209,102,.85)', 'rgba(255,209,102,0)');
+    glowDot(padL - 4, yc, 8, '#FFF7DC', 'rgba(255,247,220,0)');
+    label('Sun', padL + 2, yc + 22, 'left');
+    if (S.id === 'solar'){
+      const bx = X(1.6 * AU);
+      if (bx - X(0) > 34){
+        ctx.strokeStyle = 'rgba(152,160,198,.4)';
+        ctx.beginPath(); ctx.moveTo(X(0), yc + 14); ctx.lineTo(bx, yc + 14); ctx.stroke();
+        label('rocky planets', (X(0) + bx) / 2, yc + 26, 'center', 'rgba(152,160,198,.7)', 9);
+      }
+    }
+  } else if (S.id === 'galaxy'){
+    glowDot(padL, yc, 30, 'rgba(244,217,160,.75)', 'rgba(244,217,160,0)');
+    label('Sagittarius A*', padL, yc + 22, 'left');
+    glowDot(W - padR, yc, 5, PAL.hot, 'rgba(255,243,196,0)');
+    label('Solar System', W - padR, yc + 20, 'right');
+    label('Proxima 4.2 ly', W - padR - 4, yc - 34, 'right', 'rgba(152,160,198,.7)', 9);
+  } else if (S.id === 'local'){
+    galaxySprite(padL + 2, yc, 30, 10, 0.5, 1);
+    label('Andromeda (M31)', padL + 4, yc + 26, 'left');
+    galaxySprite(W - padR, yc - 4, 26, 9, -0.3, 1);
+    label('Milky Way', W - padR, yc + 26, 'right');
+  }
+
+  /* milestones */
+  if (S.ms) for (const m of S.ms){
+    if (!m.tick) continue;
+    const x = X(m.d);
+    ctx.strokeStyle = 'rgba(152,160,198,.45)';
+    ctx.beginPath(); ctx.moveTo(x, yc - 5); ctx.lineTo(x, yc + 5); ctx.stroke();
+    if (m.c){ ctx.fillStyle = m.c; ctx.beginPath(); ctx.arc(x, yc, 2.6, 0, 7); ctx.fill(); }
+    if (m.n) label(m.n, x, yc - 12 - 11 * (m.lv || 0));
+  }
+
+  const x = X(Math.min(sim, S.D));
+  pushTrail(x, yc); drawTrail(PAL.photon);
+  glowDot(x, yc, 9, PAL.hot, 'rgba(255,209,102,0)');
+  ctx.fillStyle = PAL.hot; ctx.beginPath(); ctx.arc(x, yc, 2.4, 0, 7); ctx.fill();
+  if (done) glowDot(X(S.D), yc, 22, 'rgba(255,243,196,.6)', 'rgba(255,243,196,0)');
+}
+
+function drawCosmoScene(){
+  if (!cosmoGal) cosmoGal = makeCosmoGal();
+  const yc = H * 0.55, x0 = 26, xR = W - 34;
+  const p = Math.min(sim / S.D, 1);
+  const stretch = 1 + 1.35 * p;
+
+  /* comoving grid, anchored on us (right), stretching left */
+  ctx.strokeStyle = 'rgba(152,160,198,.12)'; ctx.setLineDash([3, 6]);
+  for (let i = 0; i <= 8; i++){
+    const gx = x0 + i * (xR - x0) / 8;
+    const sx = xR - (xR - gx) * stretch;
+    if (sx > -10){ ctx.beginPath(); ctx.moveTo(sx, 14); ctx.lineTo(sx, H - 14); ctx.stroke(); }
+  }
+  ctx.setLineDash([]);
+
+  /* background galaxies riding the expansion */
+  for (const g of cosmoGal){
+    const sx = xR - (xR - g.bx) * stretch;
+    if (sx < -14) continue;
+    galaxySprite(sx, g.y, g.r * 2.4, g.r, 0.4, g.al);
+  }
+
+  /* the birthplace, left behind */
+  const srcX = xR - (xR - (x0 + 14)) * stretch;
+  if (srcX > -20){
+    galaxySprite(srcX, yc, 12, 5, -0.2, 1);
+    label('birthplace', srcX, yc + 20, 'center', 'rgba(152,160,198,.8)', 9);
+  } else {
+    label('\u2190 birthplace, receding', x0, yc + 20, 'left', 'rgba(152,160,198,.7)', 9);
+  }
+
+  /* us */
+  glowDot(xR, yc, 6, '#BFD9FF', 'rgba(191,217,255,0)');
+  label('Earth (today)', xR + 4, yc + 22, 'right');
+
+  /* the pulse: constant speed, stretching + reddening wave tail */
+  const x = (x0 + 14) + p * ((xR - 12) - (x0 + 14));
+  const hue = 208 - 204 * Math.pow(p, 0.7);
+  const col = 'hsl(' + hue + ' 95% ' + (68 - 12 * p) + '%)';
+  const lam = 8 + 44 * p, amp = 3.4, tailLen = Math.min(70, x - x0);
+  ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.globalAlpha = 0.9;
+  ctx.beginPath();
+  for (let i = 0; i <= tailLen; i += 2){
+    const xx = x - i, yy = yc + amp * Math.sin((2 * Math.PI * i) / lam);
+    i === 0 ? ctx.moveTo(xx, yy) : ctx.lineTo(xx, yy);
+  }
+  ctx.stroke(); ctx.globalAlpha = 1; ctx.lineWidth = 1;
+  glowDot(x, yc, 10, col, 'rgba(255,120,90,0)');
+  if (done) glowDot(xR, yc, 24, 'rgba(255,107,94,.5)', 'rgba(255,107,94,0)');
+}
+
+/* ---------- main loop ---------- */
+function frame(ts){
+  const dt = Math.min(0.05, (ts - lastTs) / 1000 || 0);
+  lastTs = ts;
+
+  if (playing && !done){
+    sim += dt * S.spd * mult;
+    if (S.mode !== 'bounce' && sim >= S.D){ sim = S.D; fireCaps(); finish(); }
+    else fireCaps();
+  }
+  drainCaps(dt);
+
+  ctx.clearRect(0, 0, W, H);
+  if (S.mode === 'bounce') drawEarthScene();
+  else if (S.mode === 'cosmo') drawCosmoScene();
+  else drawLinearScene();
+
+  el.clock.textContent = fmtTime(sim);
+  el.dist.textContent = S.dist(sim);
+  updateBadge();
+
+  requestAnimationFrame(frame);
+}
+
+/* ---------- sizing ----------
+   Backing store = the canvas's own CSS box × a render scale with a floor
+   of 2, so output stays crisp on 1× displays and when the page is embedded
+   in a scaled iframe (e.g. reveal.js). The transform maps logical W×H
+   CSS-px coordinates exactly onto the rounded backing store. */
+function resize(){
+  const r = cv.getBoundingClientRect();
+  if(r.width < 2 || r.height < 2) return;
+  const d = Math.min(3, Math.max(2, window.devicePixelRatio || 1));
+  W = r.width; H = r.height;
+  const bw = Math.round(W * d), bh = Math.round(H * d);
+  if(cv.width !== bw)  cv.width  = bw;
+  if(cv.height !== bh) cv.height = bh;
+  ctx.setTransform(bw / W, 0, 0, bh / H, 0, 0);
+  stars = null; cosmoGal = null;
+}
+new ResizeObserver(resize).observe(cv);
+resize();
+/* refit when the pixel density changes (browser zoom, moving displays) */
+(function watchDPR(){
+  matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`)
+    .addEventListener('change', () => { resize(); watchDPR(); }, { once: true });
+})();
+
+setScene(0);
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
