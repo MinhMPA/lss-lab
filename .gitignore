@@ -38,3 +38,7 @@ output/
 # Env / secrets
 .env
 .env.local
+
+# Local session artifacts
+.remember/
+.playwright-mcp/

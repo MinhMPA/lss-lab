@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sound vs. Light — needs a medium vs. crosses empty space</title>
+<style>
+  :root{
+    --surface-2:#FCFBF9;
+    --border:rgba(30,27,22,0.10);
+    --border-strong:rgba(30,27,22,0.24);
+    --text:#232019;
+    --text-secondary:#57534C;
+    --text-muted:#918B82;
+    --bg-accent:#EFE9E1;
+    --text-accent:#7A2E12;
+    --radius:8px;
+    --font-sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --page-bg:#F1ECE4;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --surface-2:#22201C;
+      --border:rgba(255,255,255,0.12);
+      --border-strong:rgba(255,255,255,0.26);
+      --text:#ECE7DE;
+      --text-secondary:#B9B3A9;
+      --text-muted:#807B72;
+      --bg-accent:#33302A;
+      --text-accent:#E8A487;
+      --page-bg:#161512;
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--page-bg);
+    color:var(--text);
+    font-family:var(--font-sans);
+    -webkit-font-smoothing:antialiased;
+    padding:28px 20px 36px;
+  }
+  .wrap{max-width:880px;margin:0 auto;}
+  h1{font-size:20px;font-weight:600;margin:0 0 2px;}
+  .sub{font-size:13px;color:var(--text-secondary);margin:0 0 20px;}
+  button{
+    font:inherit;font-size:13px;padding:6px 12px;cursor:pointer;
+    border:0.5px solid var(--border-strong);border-radius:var(--radius);
+    background:var(--surface-2);color:var(--text);
+  }
+  button:hover{border-color:var(--text-muted);}
+  label{cursor:default;}
+  .ti{font-style:normal;line-height:1;display:inline-block;}
+  .ti-player-pause::before{content:"\23F8";}
+  .ti-player-play::before{content:"\25B6";}
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Sound vs. Light</h1>
+  <p class="sub">Both are waves. Switch Air &rarr; Vacuum to remove the medium, and see which one still crosses.</p>
+
+  <h2 class="sr-only">Animated comparison. Sound is a longitudinal wave carried by a medium of particles. Light is a pulse that travels across empty space. Switching from Air to Vacuum removes the medium: the sound wave dies while light keeps crossing.</h2>
+
+  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:0 0 1rem;">
+    <button id="wv-play" aria-label="Pause animation" style="display:inline-flex;align-items:center;gap:6px;min-width:96px;justify-content:center;"><i class="ti ti-player-pause" aria-hidden="true" style="font-size:14px;"></i><span id="wv-play-label">Pause</span></button>
+    <div style="display:inline-flex;border:0.5px solid var(--border-strong);border-radius:var(--radius);overflow:hidden;">
+      <button id="wv-air" style="border:none;border-radius:0;background:var(--bg-accent);color:var(--text-accent);">Air</button>
+      <button id="wv-vac" style="border:none;border-radius:0;border-left:0.5px solid var(--border-strong);background:transparent;">Vacuum</button>
+    </div>
+  </div>
+
+  <div style="background:var(--surface-2);border:0.5px solid var(--border);border-radius:12px;overflow:hidden;margin:0 0 12px;">
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:0.5px solid var(--border);">
+      <span style="font-size:15px;font-weight:500;">Sound</span>
+      <span id="wv-snd-speed" style="margin-left:auto;font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);">v ≈ 343 m/s in air</span>
+    </div>
+    <canvas id="wv-snd" style="display:block;width:100%;height:210px;"></canvas>
+  </div>
+
+  <div style="background:var(--surface-2);border:0.5px solid var(--border);border-radius:12px;overflow:hidden;">
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:0.5px solid var(--border);">
+      <span style="font-size:15px;font-weight:500;">Light</span>
+      <span id="wv-lgt-speed" style="margin-left:auto;font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);">c ≈ 3×10⁸ m/s</span>
+    </div>
+    <canvas id="wv-lgt" style="display:block;width:100%;height:210px;"></canvas>
+  </div>
+</div>
+
+<script>
+(function(){
+  var state = { playing:true, medium:1, med:1, freq:0.7, t:0, last:null };
+  var V_SND=70;
+  var CORAL="#D85A30", BLUE="#378ADD", PURPLE="#7F77DD";
+
+  var sndCv=document.getElementById("wv-snd"), lgtCv=document.getElementById("wv-lgt");
+  var sndCtx=sndCv.getContext("2d"), lgtCtx=lgtCv.getContext("2d");
+  var sndSpeed=document.getElementById("wv-snd-speed"), lgtSpeed=document.getElementById("wv-lgt-speed");
+
+  function themeColors(){
+    var cs=getComputedStyle(document.documentElement);
+    return { txt:(cs.getPropertyValue("--text-secondary").trim()||"#666"), mut:(cs.getPropertyValue("--text-muted").trim()||"#999") };
+  }
+
+  var particles=[], stars={snd:[],lgt:[]}, hlCol=0;
+  function fit(cv){
+    var dpr=Math.min(2,window.devicePixelRatio||1), w=cv.clientWidth, h=cv.clientHeight;
+    if (w<10) return false;
+    cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr);
+    cv.getContext("2d").setTransform(dpr,0,0,dpr,0,0); return true;
+  }
+  function makeStars(w,h){ var a=[],n=Math.round(w*h/6000); for(var i=0;i<n;i++) a.push({x:Math.random()*w,y:Math.random()*h,r:0.6+Math.random()*0.9,a:0.15+Math.random()*0.3}); return a; }
+  function rebuild(){
+    if (!fit(sndCv)||!fit(lgtCv)) return;
+    var w=sndCv.clientWidth,h=sndCv.clientHeight; particles=[];
+    var x0=46, spacing=17, rows=Math.floor((h-44)/16), cols=Math.ceil((w-x0)/spacing)+2;
+    for (var r=0;r<rows;r++) for (var c=0;c<cols;c++) particles.push({ x0:x0+c*spacing+(Math.random()-0.5)*5, y0:30+r*16+(Math.random()-0.5)*5, col:c });
+    hlCol=Math.round(cols*0.4);
+    stars.snd=makeStars(w,h); stars.lgt=makeStars(lgtCv.clientWidth,lgtCv.clientHeight);
+  }
+
+  function drawBackdrop(ctx,w,h,arr,med){
+    ctx.clearRect(0,0,w,h);
+    if (med<0.95){ var a=(1-med); ctx.fillStyle=themeColors().mut;
+      for (var i=0;i<arr.length;i++){ var s=arr[i]; ctx.globalAlpha=s.a*a; ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,6.2832); ctx.fill(); } ctx.globalAlpha=1; }
+  }
+  function arrow(ctx,x1,y1,x2,y2,head){
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    var dx=x2-x1,dy=y2-y1,L=Math.hypot(dx,dy); if (L<head*1.6) return;
+    var a=Math.atan2(dy,dx); ctx.beginPath(); ctx.moveTo(x2,y2);
+    ctx.lineTo(x2-head*Math.cos(a-0.45),y2-head*Math.sin(a-0.45));
+    ctx.lineTo(x2-head*Math.cos(a+0.45),y2-head*Math.sin(a+0.45));
+    ctx.closePath(); ctx.fill();
+  }
+
+  function drawSound(){
+    var w=sndCv.clientWidth,h=sndCv.clientHeight,med=state.med,t=state.t;
+    var omega=6.2832*state.freq,k=omega/V_SND,A=8;
+    drawBackdrop(sndCtx,w,h,stars.snd,med); var ctx=sndCtx;
+    if (med>0.03){
+      for (var sx=40;sx<w;sx+=5){ var comp=-Math.cos(k*sx-omega*t); if (comp>0){ ctx.fillStyle=BLUE; ctx.globalAlpha=0.10*comp*med; ctx.fillRect(sx,16,5,h-32); } }
+      ctx.globalAlpha=1;
+      for (var i=0;i<particles.length;i++){
+        var p=particles[i], x=p.x0+A*med*Math.sin(k*p.x0-omega*t);
+        if (p.col===hlCol){ ctx.fillStyle=PURPLE; ctx.globalAlpha=med; ctx.beginPath(); ctx.arc(x,p.y0,2.8,0,6.2832); ctx.fill(); }
+        else { ctx.fillStyle=BLUE; ctx.globalAlpha=0.72*med; ctx.beginPath(); ctx.arc(x,p.y0,2.1,0,6.2832); ctx.fill(); }
+      }
+      ctx.globalAlpha=1;
+    }
+    var col=themeColors(), midY=h/2, vib=2.2*Math.sin(omega*t);
+    ctx.fillStyle=col.txt; ctx.fillRect(10,midY-11,7,22);
+    ctx.beginPath(); ctx.moveTo(17,midY-7+vib*0.2); ctx.lineTo(28+vib,midY-15); ctx.lineTo(28+vib,midY+15); ctx.lineTo(17,midY+7-vib*0.2); ctx.closePath(); ctx.fill();
+    if (med>0.05){ ctx.strokeStyle=col.txt; ctx.lineWidth=1.2;
+      for (var a2=0;a2<3;a2++){ var rr=((t*V_SND)%(V_SND/state.freq/3))+8+a2*11; ctx.globalAlpha=Math.max(0,0.5-rr/70)*med; ctx.beginPath(); ctx.arc(30+vib,midY,rr,-0.9,0.9); ctx.stroke(); } ctx.globalAlpha=1; }
+    ctx.fillStyle=col.txt; ctx.strokeStyle=col.txt; ctx.lineWidth=1.4; ctx.globalAlpha=0.7; arrow(ctx,w-70,h-14,w-16,h-14,5); ctx.globalAlpha=1;
+  }
+
+  function drawLight(){
+    var w=lgtCv.clientWidth,h=lgtCv.clientHeight,med=state.med,t=state.t;
+    drawBackdrop(lgtCtx,w,h,stars.lgt,med); var ctx=lgtCtx;
+    var speed=150, margin=44, span=w+2*margin, sig=24;
+    var base=((t*speed)%span)-margin;
+    for (var rep=-1;rep<=1;rep++){
+      var xc=base+rep*span;
+      if (xc< -3*sig || xc> w+3*sig) continue;
+      var x0=Math.max(0,Math.floor(xc-3*sig)), x1=Math.min(w,Math.ceil(xc+3*sig));
+      for (var x=x0;x<=x1;x+=2){ var g=Math.exp(-Math.pow((x-xc)/sig,2)); ctx.fillStyle=CORAL; ctx.globalAlpha=0.55*g; ctx.fillRect(x,14,2,h-28); }
+    }
+    ctx.globalAlpha=1;
+  }
+
+  function step(ts){
+    if (state.last==null) state.last=ts;
+    var dt=Math.min(0.05,(ts-state.last)/1000); state.last=ts;
+    if (state.playing) state.t+=dt;
+    state.med += (state.medium-state.med)*Math.min(1,dt*3.5);
+    if (Math.abs(state.medium-state.med)<0.005) state.med=state.medium;
+    drawSound(); drawLight(); requestAnimationFrame(step);
+  }
+
+  var playBtn=document.getElementById("wv-play"), playLbl=document.getElementById("wv-play-label");
+  playBtn.addEventListener("click",function(){
+    state.playing=!state.playing; playLbl.textContent=state.playing?"Pause":"Play";
+    playBtn.setAttribute("aria-label",state.playing?"Pause animation":"Play animation");
+    playBtn.querySelector("i").className=state.playing?"ti ti-player-pause":"ti ti-player-play";
+  });
+  var airBtn=document.getElementById("wv-air"), vacBtn=document.getElementById("wv-vac");
+  function setMedium(m){
+    state.medium=m;
+    airBtn.style.background=m===1?"var(--bg-accent)":"transparent"; airBtn.style.color=m===1?"var(--text-accent)":"";
+    vacBtn.style.background=m===0?"var(--bg-accent)":"transparent"; vacBtn.style.color=m===0?"var(--text-accent)":"";
+    sndSpeed.textContent=m===0?"v = 0 — cannot propagate":"v ≈ 343 m/s in air";
+    lgtSpeed.textContent=m===0?"c ≈ 3×10⁸ m/s — unaffected":"c ≈ 3×10⁸ m/s";
+  }
+  airBtn.addEventListener("click",function(){setMedium(1);});
+  vacBtn.addEventListener("click",function(){setMedium(0);});
+
+  if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches){ state.playing=false; playLbl.textContent="Play"; playBtn.querySelector("i").className="ti ti-player-play"; }
+  var ro=new ResizeObserver(function(){rebuild();}); ro.observe(sndCv); ro.observe(lgtCv);
+  rebuild(); requestAnimationFrame(step);
+})();
+</script>
+</body>
+</html>
