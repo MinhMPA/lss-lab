@@ -378,9 +378,17 @@ for(let i=0;i<9;i++)
   LG_BLOBS.push({d:Math.pow(10,rnd(Math.log10(0.4*MLY),Math.log10(1.9*MLY))),
                  th:rnd(0,TAU), R:rnd(2.5,6.5)*KLY, a:rnd(0.24,0.42)});
 
-/* Cosmic web as a Voronoi foam: galaxies gather on the walls and
-   filaments between roughly uniform void cells, with knots (clusters)
-   where several cells meet — the geometry galaxy surveys actually map. */
+/* ================================================================
+   ΛCDM cosmic web — the pattern is generated, not hand-drawn.
+   Eisenstein & Hu (1998) transfer function WITH baryon wiggles
+   → slice power P2D(k) by line-of-sight projection → Gaussian
+   random field → Zel'dovich displacement of a particle grid →
+   galaxies sampled with bias toward initially overdense regions.
+   BAO is therefore in the map at its physical scale (~500 Mly)
+   and amplitude: far too subtle to see by eye, as in real surveys.
+   Method after N. Schuster's Cosmic Web Explorer
+   (nicosmo.github.io/cosmic_web_explorer).
+   ================================================================ */
 /* smooth periodic angular noise, used to roughen every fade that would
    otherwise be a perfect circle centred on the observer */
 function angNoise(seed){
@@ -388,119 +396,247 @@ function angNoise(seed){
   const p1 = rr()*TAU, p2 = rr()*TAU, p3 = rr()*TAU;
   return th => 0.55*Math.sin(2*th+p1) + 0.30*Math.sin(3*th+p2) + 0.15*Math.sin(5*th+p3);
 }
+const rimN_near = angNoise(101), rimN_far = angNoise(207);
 
-function buildFoam(o){
-  // Void centres over a padded disk so rim cells close. Seeds come from a
-  // clustered (Neyman–Scott) process — dense seed clumps make small voids,
-  // the gaps between parents make large ones — so cell sizes span a broad
-  // range instead of a single suspicious "BAO-like" scale.
-  // grade 0.5 = uniform density; larger values put more seeds (smaller
-  // cells) near the observer — like survey depth.
-  const pad = o.rMax*1.15, seeds = [];
-  const cell0 = pad*Math.sqrt(Math.PI/o.seeds);
-  const parents = [];
-  const nPar = Math.max(4, Math.round(o.seeds*0.4));
-  for(let i=0;i<nPar;i++){
-    const r = pad*Math.pow(rng(), o.grade||0.5), th = rnd(0,TAU);
-    parents.push([Math.cos(th)*r, Math.sin(th)*r]);
+const COSMO = {h:0.674, Om:0.315, fb:0.157, ns:0.965, Tcmb:2.7255}; // Planck 2018
+const MPCH = 3.2616e6*LY/COSMO.h;          // one Mpc/h in light-seconds
+
+/* Eisenstein & Hu (1998) fitting formulas, baryon wiggles included. k in h/Mpc. */
+function ehTransfer(k){
+  const h=COSMO.h, omhh=COSMO.Om*h*h, obhh=omhh*COSMO.fb;
+  const th=COSMO.Tcmb/2.7, th2=th*th, th4=th2*th2;
+  const fb=COSMO.fb, fc=1-fb;
+  const zeq=2.5e4*omhh/th4;
+  const b1=0.313*Math.pow(omhh,-0.419)*(1+0.607*Math.pow(omhh,0.674));
+  const b2=0.238*Math.pow(omhh,0.223);
+  const zd=1291*Math.pow(omhh,0.251)/(1+0.659*Math.pow(omhh,0.828))*(1+b1*Math.pow(obhh,b2));
+  const Rd=31.5*obhh/th4*(1000/zd), Req=31.5*obhh/th4*(1000/zeq);
+  const keq=0.0746*omhh/th2;
+  const s=(2/(3*keq))*Math.sqrt(6/Req)*Math.log((Math.sqrt(1+Rd)+Math.sqrt(Rd+Req))/(1+Math.sqrt(Req)));
+  const ksilk=1.6*Math.pow(obhh,0.52)*Math.pow(omhh,0.73)*(1+Math.pow(10.4*omhh,-0.95));
+  const a1=Math.pow(46.9*omhh,0.670)*(1+Math.pow(32.1*omhh,-0.532));
+  const a2=Math.pow(12.0*omhh,0.424)*(1+Math.pow(45.0*omhh,-0.582));
+  const ac=Math.pow(a1,-fb)*Math.pow(a2,-fb*fb*fb);
+  const bb1=0.944/(1+Math.pow(458*omhh,-0.708));
+  const bb2=Math.pow(0.395*omhh,-0.0266);
+  const bc=1/(1+bb1*(Math.pow(fc,bb2)-1));
+  const kM=k*h, ks=kM*s;
+  const T0=(kk,al,be)=>{
+    const q=kk/(13.41*keq);
+    const C=14.2/al+386/(1+69.9*Math.pow(q,1.08));
+    const Lg=Math.log(Math.E+1.8*be*q);
+    return Lg/(Lg+C*q*q);
+  };
+  const f=1/(1+Math.pow(ks/5.4,4));
+  const Tc=f*T0(kM,1,bc)+(1-f)*T0(kM,ac,bc);
+  const y=zeq/zd;
+  const Gy=y*(-6*Math.sqrt(1+y)+(2+3*y)*Math.log((Math.sqrt(1+y)+1)/(Math.sqrt(1+y)-1)));
+  const ab=2.07*keq*s*Gy*Math.pow(1+Rd,-0.75);
+  const bnode=8.41*Math.pow(omhh,0.435);
+  const bb=0.5+fb+(3-2*fb)*Math.sqrt(17.2*omhh*17.2*omhh+1);
+  const st=s/Math.cbrt(1+Math.pow(bnode/ks,3));
+  const t1=T0(kM,1,1)/(1+Math.pow(ks/5.2,2));
+  const t2=ab/(1+Math.pow(bb/ks,3))*Math.exp(-Math.pow(kM/ksilk,1.4));
+  const kst=kM*st;
+  const j0=kst>0.01 ? Math.sin(kst)/kst : 1-kst*kst/6;
+  return fb*(t1+t2)*j0 + fc*Tc;
+}
+function p3d(k){ if(k<=0) return 0; const T=ehTransfer(k); return Math.pow(k,COSMO.ns)*T*T; }
+/* power of a 2D slice: project P3D over k_z (Simpson) */
+function p2d(k){
+  if(k<=0) return 0;
+  const n=128, kzMax=Math.max(40*k,1.5), dkz=kzMax/n;
+  let sum=0;
+  for(let i=0;i<=n;i++){
+    const v=p3d(Math.hypot(k,i*dkz));
+    sum += (i===0||i===n) ? v : (i%2 ? 4*v : 2*v);
   }
-  while(seeds.length < o.seeds){
-    if(rng() < 0.4){                               // uniform component
-      const r = pad*Math.pow(rng(), o.grade||0.5), th = rnd(0,TAU);
-      seeds.push([Math.cos(th)*r, Math.sin(th)*r]);
-    }else{                                         // clustered component
-      const [px,py] = parents[Math.floor(rng()*nPar)];
-      const a = rnd(0,TAU), rc = Math.abs(rnd(-1,1)+rnd(-1,1))*0.55*cell0;
-      seeds.push([px+Math.cos(a)*rc, py+Math.sin(a)*rc]);
-    }
+  return sum*dkz/(3*Math.PI);
+}
+
+function fft1d(re,im,inv){
+  const n=re.length;
+  for(let i=1,j=0;i<n;i++){
+    let bit=n>>1;
+    for(; j&bit; bit>>=1) j^=bit;
+    j^=bit;
+    if(i<j){ let t=re[i]; re[i]=re[j]; re[j]=t; t=im[i]; im[i]=im[j]; im[j]=t; }
   }
-  const pts = [], knotCand = [];
-  for(let i=0;i<o.nCand;i++){
-    const rr = o.rMax*Math.sqrt(rng());            // area-uniform candidates
-    const th = rnd(0,TAU);
-    if(rr < o.rMin*(1+(o.rimJit ? 0.3*o.rimJit(th) : 0))) continue;
-    const x = Math.cos(th)*rr, y = Math.sin(th)*rr;
-    let d1=Infinity, d2=Infinity, d3=Infinity;     // three nearest voids
-    for(let s=0;s<seeds.length;s++){
-      const dx = x-seeds[s][0], dy = y-seeds[s][1];
-      const d = Math.sqrt(dx*dx+dy*dy);
-      if(d<d1){ d3=d2; d2=d1; d1=d; }
-      else if(d<d2){ d3=d2; d2=d; }
-      else if(d<d3){ d3=d; }
-    }
-    // wall thickness follows the local cell size (d1 ~ half a cell)
-    const wallLoc = o.wallFrac*2*d1 + 1e-9;
-    const u = (d2-d1)/wallLoc;                     // 0 on a wall midplane
-    if(u>2.2 || rng() > Math.exp(-u*u)) continue;  // keep only wall/filament galaxies
-    const nearKnot = (d3-d1) < wallLoc*1.4;        // several cells meet here
-    const p = o.emit(x,y,nearKnot,rr);
-    if(!p) continue;
-    if(nearKnot){ p.a = Math.min(p.a*1.35, 0.75); knotCand.push([x,y,d1]); }
-    pts.push(p);
-  }
-  // distinct cluster sites: thin the knot candidates to ~a cell apart
-  const knots = [];
-  for(const [x,y,d1] of knotCand){
-    if(Math.hypot(x,y) > o.rMax*0.96) continue;
-    if(knots.every(k=> Math.hypot(k.x-x, k.y-y) > (k.d+d1)*0.55)){
-      knots.push({x,y,d:d1});
-      const m = Math.round(rnd(o.clusterN*0.6, o.clusterN*1.4));
-      const rc0 = d1*0.10;                         // cluster size ~ local cell/10
-      for(let k=0;k<m;k++){
-        const a = rnd(0,TAU), rc = Math.abs(rnd(-1,1)+rnd(-1,1))*0.5*rc0;
-        const p = o.emit(x+Math.cos(a)*rc, y+Math.sin(a)*rc, true, Math.hypot(x,y));
-        if(p) pts.push(p);
+  for(let len=2;len<=n;len<<=1){
+    const ang=(inv?1:-1)*TAU/len, wr=Math.cos(ang), wi=Math.sin(ang);
+    for(let i=0;i<n;i+=len){
+      let cr=1, ci=0;
+      for(let j=0;j<len>>1;j++){
+        const a=i+j, b=a+(len>>1);
+        const vr=re[b]*cr-im[b]*ci, vi=re[b]*ci+im[b]*cr;
+        re[b]=re[a]-vr; im[b]=im[a]-vi;
+        re[a]+=vr; im[a]+=vi;
+        const t=cr*wr-ci*wi; ci=cr*wi+ci*wr; cr=t;
       }
     }
   }
-  // a light sprinkle of field galaxies — voids are empty, not perfectly so
-  for(let i=0;i<(o.nField||0);i++){
-    const rr = o.rMax*Math.sqrt(rng());
-    const th = rnd(0,TAU);
-    if(rr < o.rMin*(1+(o.rimJit ? 0.3*o.rimJit(th) : 0))) continue;
-    const p = o.emit(Math.cos(th)*rr, Math.sin(th)*rr, false, rr);
-    if(p){ p.a *= 0.45; pts.push(p); }
+  if(inv) for(let i=0;i<n;i++){ re[i]/=n; im[i]/=n; }
+}
+function fft2d(re,im,n,inv){
+  const tr=new Float64Array(n), ti=new Float64Array(n);
+  for(let y=0;y<n;y++){
+    const o=y*n;
+    for(let x=0;x<n;x++){ tr[x]=re[o+x]; ti[x]=im[o+x]; }
+    fft1d(tr,ti,inv);
+    for(let x=0;x<n;x++){ re[o+x]=tr[x]; im[o+x]=ti[x]; }
   }
-  for(const p of pts) p.th = Math.atan2(p.y,p.x);
-  return {pts, halos:knots.map(k=>({x:k.x, y:k.y, R:k.d*0.16}))};
+  for(let x=0;x<n;x++){
+    for(let y=0;y<n;y++){ tr[y]=re[y*n+x]; ti[y]=im[y*n+x]; }
+    fft1d(tr,ti,inv);
+    for(let y=0;y<n;y++){ re[y*n+x]=tr[y]; im[y*n+x]=ti[y]; }
+  }
 }
 
-/* nearby web: out to ~650 Mly, void cells ~140 Mly across,
+/* Build one web layer: GRF with sqrt(P2D) mode amplitudes → Zel'dovich
+   particles → styled galaxy points baked into an offscreen sprite.
+   The sprite maps the disk r < rMax onto its half-size. */
+function makeWeb(o){
+  const rr = mulberry32(o.seed);
+  const G=o.grid, G2=G*G, L=o.boxMpch, kf=TAU/L;
+  // P2D lookup over this box's k range
+  const NL=256, lk0=Math.log(kf*0.5), lk1=Math.log(Math.PI*G/L*1.6);
+  const plut=new Float64Array(NL);
+  for(let i=0;i<NL;i++) plut[i]=p2d(Math.exp(lk0+(lk1-lk0)*i/(NL-1)));
+  const pk=k=>{
+    let t=(Math.log(k)-lk0)/(lk1-lk0)*(NL-1);
+    t=clamp(t,0,NL-1.001);
+    const i=Math.floor(t), f=t-i;
+    return plut[i]*(1-f)+plut[i+1]*f;
+  };
+  // Gaussian modes, Hermitian-symmetric
+  const dRe=new Float64Array(G2), dIm=new Float64Array(G2);
+  for(let iy=0;iy<G;iy++) for(let ix=0;ix<G;ix++){
+    const idx=iy*G+ix;
+    const kx=(ix<=G/2?ix:ix-G)*kf, ky=(iy<=G/2?iy:iy-G)*kf;
+    const km=Math.hypot(kx,ky);
+    if(km<1e-12) continue;
+    const u1=Math.max(1e-12,rr()), u2=rr();
+    const m=Math.sqrt(-2*Math.log(u1))*Math.sqrt(Math.max(pk(km),0));
+    dRe[idx]=m*Math.cos(TAU*u2); dIm[idx]=m*Math.sin(TAU*u2);
+  }
+  for(let iy=0;iy<G;iy++) for(let ix=0;ix<G;ix++){
+    const i1=iy*G+ix, i2=((G-iy)%G)*G+(G-ix)%G;
+    if(i2>i1){ dRe[i2]=dRe[i1]; dIm[i2]=-dIm[i1]; }
+  }
+  dIm[0]=dIm[G/2]=dIm[(G/2)*G]=dIm[(G/2)*G+G/2]=0;
+  // Zel'dovich displacement psi(k) = -i k / k^2 * delta(k)
+  const pxR=new Float64Array(G2), pxI=new Float64Array(G2);
+  const pyR=new Float64Array(G2), pyI=new Float64Array(G2);
+  for(let iy=0;iy<G;iy++) for(let ix=0;ix<G;ix++){
+    const idx=iy*G+ix;
+    const kx=(ix<=G/2?ix:ix-G)*kf, ky=(iy<=G/2?iy:iy-G)*kf;
+    const k2=kx*kx+ky*ky;
+    if(k2<1e-24) continue;
+    pxR[idx]= kx*dIm[idx]/k2; pxI[idx]=-kx*dRe[idx]/k2;
+    pyR[idx]= ky*dIm[idx]/k2; pyI[idx]=-ky*dRe[idx]/k2;
+  }
+  // smooth the density used for galaxy bias, so galaxies trace the
+  // coherent web rather than single-cell noise
+  const Rs=(o.smoothCells||1.3)*(L/G);
+  for(let iy=0;iy<G;iy++) for(let ix=0;ix<G;ix++){
+    const idx=iy*G+ix;
+    const kx=(ix<=G/2?ix:ix-G)*kf, ky=(iy<=G/2?iy:iy-G)*kf;
+    const w=Math.exp(-0.5*(kx*kx+ky*ky)*Rs*Rs);
+    dRe[idx]*=w; dIm[idx]*=w;
+  }
+  fft2d(dRe,dIm,G,true);               // linear density field (for galaxy bias)
+  fft2d(pxR,pxI,G,true);
+  fft2d(pyR,pyI,G,true);
+  let ss=0, ds=0;
+  for(let i=0;i<G2;i++){ ss+=pxR[i]*pxR[i]+pyR[i]*pyR[i]; ds+=dRe[i]*dRe[i]; }
+  const norm=o.dispMpch*Math.SQRT2/Math.max(Math.sqrt(ss/G2),1e-12);
+  const dsig=Math.max(Math.sqrt(ds/G2),1e-12);
+  const cic=(arr,gx,gy)=>{
+    const x=gx-0.5, y=gy-0.5;
+    const ix=Math.floor(x), iy=Math.floor(y), fx=x-ix, fy=y-iy;
+    let v=0;
+    for(let dy2=0;dy2<=1;dy2++) for(let dx2=0;dx2<=1;dx2++){
+      const cx2=((ix+dx2)%G+G)%G, cy2=((iy+dy2)%G+G)%G;
+      v+=arr[cy2*G+cx2]*(dx2?fx:1-fx)*(dy2?fy:1-fy);
+    }
+    return v;
+  };
+  // displace, style, bake
+  const S=o.sprite, c=makeCanvas(S,S), g=c.getContext('2d');
+  const pxls2=(S/2)/o.rMax, boxLs=L*MPCH;
+  const NC=96, counts=new Float32Array(NC*NC);
+  const P=o.pgrid;
+  for(let py2=0;py2<P;py2++) for(let px2=0;px2<P;px2++){
+    const qx=(px2+rr())/P, qy=(py2+rr())/P;   // jittered Lagrangian grid
+    const gx=qx*G, gy=qy*G;
+    const u=cic(dRe,gx,gy)/dsig;              // initial overdensity in sigmas
+    let x=qx+cic(pxR,gx,gy)*norm/L, y=qy+cic(pyR,gx,gy)*norm/L;
+    x-=Math.floor(x); y-=Math.floor(y);       // periodic wrap
+    const wx=(x-0.5)*boxLs, wy=(y-0.5)*boxLs;
+    const r=Math.hypot(wx,wy);
+    if(r>o.rMax) continue;
+    const sty=o.style(r,u,Math.atan2(wy,wx),rr);
+    if(!sty) continue;
+    const sx=S/2+wx*pxls2, sy=S/2+wy*pxls2;
+    g.fillStyle='rgba('+sty.col+','+sty.a.toFixed(3)+')';
+    g.fillRect(sx,sy,sty.s,sty.s);
+    counts[Math.min(NC-1,(sy/S*NC)|0)*NC+Math.min(NC-1,(sx/S*NC)|0)]++;
+  }
+  // rare rich clusters where the displaced density is highest
+  const sorted=Float32Array.from(counts).sort().reverse();
+  const thr=Math.max(sorted[Math.floor(NC*NC*0.004)]||1e9, 8);
+  for(let cy2=0;cy2<NC;cy2++) for(let cx2=0;cx2<NC;cx2++){
+    if(counts[cy2*NC+cx2]<thr) continue;
+    const sx=(cx2+0.5)/NC*S, sy=(cy2+0.5)/NC*S;
+    const wr=Math.hypot(sx-S/2,sy-S/2)/pxls2;
+    if(wr>o.rMax*0.97) continue;
+    if(o.clusterGate && !o.clusterGate(wr,rr)) continue;
+    const m=6+Math.floor(rr()*8);
+    for(let k=0;k<m;k++){
+      const a=rr()*TAU, rad=Math.abs((rr()*2-1)+(rr()*2-1))*S*0.0035;
+      g.fillStyle='rgba(231,220,193,'+(0.3+0.4*rr()).toFixed(3)+')';
+      g.fillRect(sx+Math.cos(a)*rad, sy+Math.sin(a)*rad, 0.8+rr(), 0.8+rr());
+    }
+  }
+  return {c,S,rMax:o.rMax};
+}
+
+/* nearby web: out to ~650 Mly, resolved down to cluster scales,
    fading at an angularly-ragged rim into the deeper map */
-const rimN_near = angNoise(101), rimN_far = angNoise(207);
-const webNear = buildFoam({
-  seeds:88, grade:0.5, rMin:22*MLY, rMax:650*MLY, nCand:26000, wallFrac:0.075,
-  clusterN:34, nField:240, rimJit:rimN_near,
-  emit:(x,y,cl,r)=>{
-    const roll = rng();
-    const jj = 1 + 0.30*rimN_near(Math.atan2(y,x));
-    const rim = 1 - 0.65*sstep(430*MLY*jj, 650*MLY*jj, r);
-    return {x,y, s:rnd(0.7,1.7)+(cl?0.2:0),
-      a:rnd(0.2,0.55)*rim,
-      col: cl && roll<0.5 ? '227,217,191' : roll<0.75 ? '198,212,240' : '226,230,240'};
+const webNear = makeWeb({
+  seed:9001, boxMpch:280, grid:256, pgrid:448, sprite:1024,
+  rMax:650*MLY, dispMpch:9,
+  style:(r,u,th,rr)=>{
+    if(rr()>0.05+0.95*sstep(0.1,1.7,u)) return null;   // bias: galaxies trace overdensities
+    const jj=1+0.30*rimN_near(th);
+    const rim=1-0.85*sstep(430*MLY*jj,650*MLY*jj,r);
+    if(rim<0.06) return null;
+    const roll=rr();
+    const col=(u>1.5&&roll<0.5)?'227,217,191':roll<0.72?'198,212,240':'226,230,240';
+    return {s:0.7+0.9*rr()+clamp(u*0.15,0,0.4),
+            a:(0.26+0.4*rr())*(0.5+0.5*sstep(-0.5,2,u))*rim, col};
   },
 });
 
-/* distant web: 0.35–13.3 Gly. Cells grow with distance, and the
-   galaxies get smaller, sparser, clumpier and slightly warmer —
-   a younger, less completely mapped Universe. */
-const webFar = buildFoam({
-  seeds:240, grade:0.83, rMin:0.35*GLY, rMax:13.3*GLY, nCand:95000, wallFrac:0.06,
-  clusterN:20, nField:300, rimJit:rimN_far,
-  emit:(x,y,cl,r)=>{
-    const zfac = clamp((r-6*GLY)/(7*GLY), 0, 1);   // 0 nearby → 1 at ~13 Gly
-    if(rng() < 0.55*zfac) return null;             // sparser when young
-    const roll = rng();
-    const cool = '198,212,240', mid = '214,204,206', warm = '216,180,154';
-    // blend in under the near web, along a ragged (non-circular) seam;
-    // the zfac evolution above stays perfectly radial — lookback is real physics
-    const jf = 1 + 0.35*rimN_far(Math.atan2(y,x));
-    const rin = sstep(0.35*GLY*jf, 0.85*GLY*jf, r);
-    return {x,y,
-      s: rnd(1.0,2.0)*(1-0.5*zfac)+(cl?0.2:0),
-      a: rnd(0.22,0.52)*(1-0.45*zfac)*rin,
-      col: roll < zfac*0.75 ? warm : roll < 0.55 ? cool : mid,
-      clump: zfac>0.4 && rng()<0.5};
+/* distant web: 0.35–13.3 Gly. The same physics on a larger slice; with
+   distance the galaxies become smaller, sparser and slightly warmer —
+   a younger Universe seen in older light. */
+const webFar = makeWeb({
+  seed:4177, boxMpch:5600, grid:256, pgrid:640, sprite:2048,
+  rMax:13.3*GLY, dispMpch:30,
+  clusterGate:(wr,rr)=> rr() > clamp((wr-6*GLY)/(7*GLY),0,1)*0.85,
+  style:(r,u,th,rr)=>{
+    const zfac=clamp((r-6*GLY)/(7*GLY),0,1);
+    if(rr()<0.55*zfac) return null;                    // sparser when young
+    if(rr()>0.05+0.95*sstep(0.1,1.7,u)) return null;
+    const jf=1+0.35*rimN_far(th);
+    const rin=sstep(0.35*GLY*jf,0.85*GLY*jf,r);        // ragged blend under the near web
+    if(rin<0.04) return null;
+    const roll=rr();
+    const cool='198,212,240', mid='214,204,206', warm='216,180,154';
+    return {s:(1.2+1.1*rr())*(1-0.45*zfac),
+            a:(0.34+0.4*rr())*(1-0.45*zfac)*rin*(0.5+0.5*sstep(-0.5,2,u)),
+            col: roll<zfac*0.75?warm:roll<0.55?cool:mid};
   },
 });
 
@@ -664,21 +800,39 @@ function draw(t){
     sprite(cmbSpr, cx,cy, r*(cmbSpr.S/2)/cmbSpr.R, aCMB*0.85);
   }
 
+  /* ---- webs: pre-rendered ΛCDM slices; the survey wedge brightens the
+          sector and dims the rest via two clipped draws ---- */
+  const wedgeHalfNow = WEDGE_HALF + (Math.PI-WEDGE_HALF)*sstep(0,1,wWide);
+  const drawWeb = (w, alpha)=>{
+    if(alpha<=0.004) return;
+    const dw = 2*w.rMax*pxls;
+    const dx = cx-dw/2, dy = cy-dw/2;
+    if(wedgeDim>0.01){
+      const a0 = WEDGE_TH-wedgeHalfNow, a1 = WEDGE_TH+wedgeHalfNow;
+      const R = ST.w+ST.h;
+      const sector = new Path2D();
+      sector.moveTo(cx,cy); sector.arc(cx,cy,R,a0,a1); sector.closePath();
+      const outside = new Path2D(sector);
+      outside.rect(ST.x,ST.y,ST.w,ST.h);
+      ctx.save(); ctx.clip(outside,'evenodd');
+      ctx.globalAlpha = clamp(alpha*(1-0.74*wedgeDim),0,1);
+      ctx.drawImage(w.c, dx,dy,dw,dw);
+      ctx.restore();
+      ctx.save(); ctx.clip(sector);
+      ctx.globalAlpha = clamp(alpha*(1+0.3*wedgeDim),0,1);
+      ctx.drawImage(w.c, dx,dy,dw,dw);
+      ctx.restore();
+    }else{
+      ctx.save(); ctx.globalAlpha = clamp(alpha,0,1);
+      ctx.drawImage(w.c, dx,dy,dw,dw);
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+  };
+
   /* ---- distant web + quasars ---- */
   if(aWebF>0.004){
-    for(const p of webFar.pts){
-      const r = Math.hypot(p.x,p.y);
-      if(r*pxls > ST.h*1.6) continue;
-      let f = 1;
-      if(wedgeDim>0.01){
-        const inw = 1 - sstep(WEDGE_HALF-0.07, WEDGE_HALF+0.07, angDiff(p.th,WEDGE_TH));
-        f = (1 - 0.74*wedgeDim*(1-inw)) * (1 + 0.3*wedgeDim*inw);
-      }
-      const x = SX(p.x), y = SY(p.y);
-      dot(x,y, p.s, p.col, Math.min(p.a*aWebF*f,0.85));
-      if(p.clump){ dot(x+2,y-1.4, p.s*0.6, p.col, p.a*aWebF*f*0.8);
-                   dot(x-1.6,y+1.8, p.s*0.5, p.col, p.a*aWebF*f*0.7); }
-    }
+    drawWeb(webFar, aWebF);
     for(let i=0;i<QUASARS.length;i++){
       const q = QUASARS[i];
       let f = 1;
@@ -731,20 +885,7 @@ function draw(t){
   }
 
   /* ---- nearby cosmic web ---- */
-  if(aWebN>0.004){
-    for(const p of webNear.pts){
-      if(Math.hypot(p.x,p.y)*pxls > ST.h*1.6) continue;
-      let f = 1;
-      if(wedgeDim>0.01){
-        const inw = 1 - sstep(WEDGE_HALF-0.07, WEDGE_HALF+0.07, angDiff(p.th,WEDGE_TH));
-        f = 1 - 0.74*wedgeDim*(1-inw);
-      }
-      dot(SX(p.x),SY(p.y), p.s, p.col, p.a*aWebN*f);
-    }
-    for(const h2 of webNear.halos){
-      sprite(goldHalo, SX(h2.x),SY(h2.y), h2.R*pxls*2.0, 0.10*aWebN);
-    }
-  }
+  drawWeb(webNear, aWebN);
 
   /* At Local Group scale, true-size galaxies are a few pixels; enlarge
      the symbols gently during this scene only (positions stay honest). */

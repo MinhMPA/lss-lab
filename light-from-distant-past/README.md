@@ -41,10 +41,15 @@ indicator. No narration, no sound.
 - It is a map of what we observe, not a faster-than-light flight. Earth
   sits at the frame centre only because every observer sits at the centre
   of their own observable universe.
-- The cosmic web is a seeded Voronoi-foam toy model — galaxies on the
-  walls and filaments between void cells, clusters where cells meet — and
-  the survey wedge echoes DESI/PFS-style fan plots. Distant galaxies are
-  drawn smaller, sparser, clumpier and slightly warmer.
+- The cosmic web is generated, not hand-drawn: a Gaussian random field
+  with the Eisenstein & Hu (1998) ΛCDM power spectrum — baryon acoustic
+  oscillations included at their physical scale (~500 Mly) and amplitude,
+  i.e. invisible by eye, as in real surveys — projected to a 2D slice,
+  Zel'dovich-displaced, and sampled with galaxy bias toward overdense
+  regions (method after N. Schuster's
+  [Cosmic Web Explorer](https://nicosmo.github.io/cosmic_web_explorer/)).
+  The survey wedge echoes DESI/PFS-style fan plots, and distant galaxies
+  are drawn smaller, sparser and slightly warmer.
 - Galaxy symbols in the Local Group scene are gently enlarged (~2×) for
   legibility; positions and every HUD number stay to scale.
 - The CMB ring is the earliest light we can observe, not a physical wall,
