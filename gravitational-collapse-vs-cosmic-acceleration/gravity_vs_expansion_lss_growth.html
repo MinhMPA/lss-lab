@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<!--
+  Gravity vs. cosmic expansion - the growth of large-scale structure
+  Single-file interactive figure, no external dependencies.
+
+  Physics:
+    - Linear growth ODE in N = ln a:  D'' + (2 + dlnH/dlnA) D' = (3/2) Om(a) D,
+      integrated with RK4 from z = 49 to z = -0.75 for flat matter+Lambda
+      backgrounds (radiation neglected: <1% in H at the start).
+    - Normalization: growing-mode ICs with D -> a in matter domination, so all
+      models share primordial amplitudes and EdS is exactly D = a (which the
+      integrator reproduces to ~1e-12; a built-in regression test).
+    - Particles: 2D Zel'dovich, x = q + D(a) psi(q), with psi and its
+      deformation eigenvalues precomputed once per seed. Shell crossing is
+      regularized adhesion-style: D_eff = min(D, -1/lambda1) per particle.
+      Color/alpha scale with log density 1/[(1+D_eff l1)(1+D_eff l2)].
+
+  Color code (the page's one rule): coral = gravity / collapse (source term,
+  caustics), blue = expansion-tempered growth (active D(a) curve, drag term).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gravity vs. cosmic expansion — growth of large-scale structure</title>
+<style>
+  :root{
+    --bg:#0a0c12; --panel:#12151d; --line:#242938;
+    --ink:#e9e7df; --ink2:#a4a29a; --ink3:#6f6e69;
+    --blue:#5b9ce6; --blue-soft:#7fb2ef; --coral:#e8703f;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+  main{max-width:880px;margin:0 auto;padding:44px 20px 64px}
+  h1{font:600 27px/1.25 Georgia,"Iowan Old Style","Times New Roman",serif;
+    margin:0 0 6px;letter-spacing:.2px}
+  .sub{color:var(--ink2);font-size:15px;margin:0 0 26px;max-width:60ch}
+  .sub b{color:var(--coral);font-weight:600}
+  .sub i{color:var(--blue);font-style:normal;font-weight:600}
+  .controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 18px}
+  .spacer{flex:1}
+  button{font:13px/1 inherit;font-family:inherit;color:var(--ink2);
+    background:transparent;border:1px solid var(--line);border-radius:8px;
+    padding:9px 13px;cursor:pointer}
+  button:hover{color:var(--ink);border-color:#3a4152}
+  button.active{color:var(--blue);border-color:var(--blue)}
+  button:focus-visible,input:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+  #fieldwrap{position:relative;width:100%;max-width:520px;margin:0 auto;aspect-ratio:1}
+  #fieldwrap canvas{position:absolute;inset:0;width:100%;height:100%;
+    border:1px solid var(--line);border-radius:10px}
+  .timerow{display:flex;align-items:center;gap:12px;margin:16px 0 6px}
+  .timerow label{font-size:13px;color:var(--ink2);white-space:nowrap}
+  input[type=range]{flex:1;accent-color:var(--blue)}
+  #readout{font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    color:var(--ink2);margin:0 0 22px}
+  #growthwrap{position:relative;width:100%;height:260px;margin:0 0 24px}
+  #growthwrap canvas{position:absolute;inset:0;width:100%;height:100%}
+  .fight{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:16px 18px}
+  .fhead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .fhead .lbl{font-size:13px;color:var(--ink2)}
+  #fval{font:600 24px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  #verdict{font-size:13px;color:var(--ink2)}
+  .barlbl{display:flex;justify-content:space-between;font-size:12.5px;
+    color:var(--ink2);margin-bottom:4px}
+  .barlbl span:last-child{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .track{height:10px;background:#1a1e28;border:1px solid var(--line);
+    border-radius:5px;overflow:hidden;margin-bottom:12px}
+  .track:last-child{margin-bottom:0}
+  .fill{height:100%;width:0}
+  #bar-src{background:var(--coral)}
+  #bar-drag{background:var(--blue)}
+  .note{font-size:13px;line-height:1.65;color:var(--ink3);margin-top:24px;max-width:78ch}
+  .note code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Gravity vs. cosmic expansion</h1>
+  <p class="sub">The growth of large-scale structure as a tug of war:
+    <b>gravity</b> amplifies primordial wrinkles into the cosmic web while the
+    <i>expansion</i> drags against it. Same initial conditions, three referees —
+    scrub cosmic time, or press play.</p>
+
+  <div class="controls" role="group" aria-label="Cosmology presets and playback">
+    <button id="p-eds">EdS</button>
+    <button id="p-om03">flat &Lambda;CDM, &Omega;<sub>m</sub> = 0.3</button>
+    <button id="p-om01">flat &Lambda;CDM, &Omega;<sub>m</sub> = 0.1</button>
+    <span class="spacer"></span>
+    <button id="play" aria-label="Play or pause the animation">Play</button>
+    <button id="reseed">New seed</button>
+  </div>
+
+  <div id="fieldwrap">
+    <canvas id="field" role="img"
+      aria-label="Comoving particle field of the cosmic web at the current scale factor; caustics highlighted in coral"></canvas>
+  </div>
+
+  <div class="timerow">
+    <label for="tslider">ln&nbsp;a</label>
+    <input type="range" id="tslider" min="0" max="1400" step="1" value="1034"
+      aria-label="Scale factor, logarithmic slider from a equals 0.02 to a equals 4">
+  </div>
+  <div id="readout" aria-live="polite">a = 1.00 &middot; z = 0.00 &middot; D = 0.78 &middot; &Omega;m(a) = 0.30</div>
+
+  <div id="growthwrap">
+    <canvas id="growth" role="img"
+      aria-label="Log-log plot of growth factor D versus scale factor a for the three cosmologies sharing initial conditions, with markers at the current epoch"></canvas>
+  </div>
+
+  <div class="fight" aria-label="The two terms of the growth equation">
+    <div class="fhead">
+      <span class="lbl">Growth rate f = dlnD/dlna</span>
+      <span id="fval">0.51</span>
+      <span id="verdict"></span>
+    </div>
+    <div class="barlbl"><span>Gravity source &middot; (3/2)&thinsp;&Omega;m(a)</span><span id="src-val">0.45</span></div>
+    <div class="track"><div class="fill" id="bar-src"></div></div>
+    <div class="barlbl"><span>Hubble drag &middot; (2 + dlnH/dlna)&thinsp;f</span><span id="drag-val">0.80</span></div>
+    <div class="track"><div class="fill" id="bar-drag"></div></div>
+  </div>
+
+  <p class="note">
+    Model: linear growth ODE <code>D&Prime; + (2 + dlnH/dlna)&thinsp;D&prime; = (3/2)&thinsp;&Omega;m(a)&thinsp;D</code>,
+    RK4-integrated in N = ln&thinsp;a from z = 49 to z = &minus;0.75 for flat
+    matter+&Lambda; backgrounds (radiation neglected; &lt;1% in H at the start).
+    Normalization: growing-mode initial conditions with D &rarr; a in matter
+    domination, so all three models share primordial amplitudes and EdS is
+    exactly D = a. Particles: 2D Zel&rsquo;dovich displacements
+    <code>x = q + D(a)&thinsp;&psi;(q)</code>; shell crossing is regularized
+    adhesion-style, <code>D_eff = min(D, &minus;1/&lambda;&#8321;)</code>, and
+    brightness scales with the log of
+    <code>1/[(1+D_eff&thinsp;&lambda;&#8321;)(1+D_eff&thinsp;&lambda;&#8322;)]</code>.
+    Keyboard: space plays/pauses, arrow keys scrub. Single file, no dependencies.
+  </p>
+  <noscript><p class="note">This figure needs JavaScript to run.</p></noscript>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  var TAU = Math.PI * 2;
+
+  /* ---------- 1. Linear growth: RK4 in N = ln a ---------- */
+  var A0 = 0.02, A1 = 4.0;
+  var N0 = Math.log(A0), N1 = Math.log(A1);
+  var STEPS = 1400, dN = (N1 - N0) / STEPS;
+  var ORDER = ['eds', 'om03', 'om01'];
+  var PRESETS = {
+    eds:  { Om: 1.0, tag: 'EdS: D = a' },
+    om03: { Om: 0.3, tag: '\u03A9m = 0.3' },
+    om01: { Om: 0.1, tag: '\u03A9m = 0.1' }
+  };
+
+  function solveGrowth(Om) {
+    var OL = 1 - Om;
+    function Oma(a) { var m = Om / (a * a * a); return m / (m + OL); }
+    /* y = [D, G], G = dD/dN; drag = 2 - 1.5 Om(a) is exact for flat matter+Lambda */
+    function rhs(N, D, G) {
+      var om = Oma(Math.exp(N));
+      return [G, -(2 - 1.5 * om) * G + 1.5 * om * D];
+    }
+    var D = A0, G = A0; /* growing mode: D -> a, D' = D */
+    var Da = new Float64Array(STEPS + 1), Fa = new Float64Array(STEPS + 1),
+        Oa = new Float64Array(STEPS + 1);
+    Da[0] = D; Fa[0] = 1; Oa[0] = Oma(A0);
+    for (var i = 0; i < STEPS; i++) {
+      var N = N0 + i * dN;
+      var k1 = rhs(N, D, G);
+      var k2 = rhs(N + dN / 2, D + dN / 2 * k1[0], G + dN / 2 * k1[1]);
+      var k3 = rhs(N + dN / 2, D + dN / 2 * k2[0], G + dN / 2 * k2[1]);
+      var k4 = rhs(N + dN, D + dN * k3[0], G + dN * k3[1]);
+      D += dN / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]);
+      G += dN / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]);
+      Da[i + 1] = D; Fa[i + 1] = G / D; Oa[i + 1] = Oma(Math.exp(N + dN));
+    }
+    return { D: Da, F: Fa, OM: Oa };
+  }
+  var SOL = {};
+  ORDER.forEach(function (k) { SOL[k] = solveGrowth(PRESETS[k].Om); });
+  var I_TODAY = Math.round((0 - N0) / dN);
+
+  /* ---------- 2. Displacement field: 2D Zel'dovich toy ---------- */
+  var NP = 84, NMODES = 150, NPART = NP * NP;
+  var P = null;
+
+  function mulberry(s) {
+    return function () {
+      var t = s += 0x6D2B79F5;
+      t = Math.imul(t ^ t >>> 15, t | 1);
+      t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  function buildField(seed) {
+    var rnd = mulberry(seed);
+    var kx = new Float64Array(NMODES), ky = new Float64Array(NMODES),
+        ph = new Float64Array(NMODES), am = new Float64Array(NMODES);
+    var kmin = 1 * TAU, kmax = 22 * TAU, kp = 6 * TAU;
+    for (var m = 0; m < NMODES; m++) {
+      var k = kmin * Math.pow(kmax / kmin, rnd()), th = rnd() * TAU;
+      var Pk = k / Math.pow(1 + Math.pow(k / kp, 2.5), 2); /* toy spectrum */
+      kx[m] = k * Math.cos(th); ky[m] = k * Math.sin(th); ph[m] = rnd() * TAU;
+      am[m] = Math.sqrt(Pk * k * k) * (rnd() < 0.5 ? 1 : -1);
+    }
+    P = {
+      qx: new Float32Array(NPART), qy: new Float32Array(NPART),
+      px: new Float32Array(NPART), py: new Float32Array(NPART),
+      l1: new Float32Array(NPART), l2: new Float32Array(NPART),
+      dc: new Float32Array(NPART)
+    };
+    var idx = 0;
+    for (var j = 0; j < NP; j++) for (var i = 0; i < NP; i++, idx++) {
+      var qx = (i + 0.5) / NP, qy = (j + 0.5) / NP;
+      var sx = 0, sy = 0, dxx = 0, dxy = 0, dyy = 0;
+      for (m = 0; m < NMODES; m++) {
+        var k2m = kx[m] * kx[m] + ky[m] * ky[m];
+        var arg = kx[m] * qx + ky[m] * qy + ph[m];
+        var s = Math.sin(arg), c = Math.cos(arg), w = am[m] / k2m;
+        sx += w * kx[m] * s; sy += w * ky[m] * s;                 /* psi */
+        dxx += w * kx[m] * kx[m] * c;                             /* d psi_a / d q_b */
+        dxy += w * kx[m] * ky[m] * c;
+        dyy += w * ky[m] * ky[m] * c;
+      }
+      P.qx[idx] = qx; P.qy[idx] = qy; P.px[idx] = sx; P.py[idx] = sy;
+      var tr = (dxx + dyy) / 2,
+          dd = Math.sqrt((dxx - dyy) * (dxx - dyy) / 4 + dxy * dxy);
+      P.l1[idx] = tr - dd; P.l2[idx] = tr + dd;
+    }
+    /* normalize so the 1st-percentile lambda1 reaches its caustic at D = 0.55 */
+    var srt = Array.prototype.slice.call(P.l1).sort(function (a, b) { return a - b; });
+    var lref = srt[Math.floor(0.01 * srt.length)];
+    var sc = (-1 / 0.55) / lref;
+    for (i = 0; i < NPART; i++) {
+      P.px[i] *= sc; P.py[i] *= sc; P.l1[i] *= sc; P.l2[i] *= sc;
+      P.dc[i] = P.l1[i] < 0 ? -1 / P.l1[i] : 1e9; /* adhesion clamp */
+    }
+  }
+  buildField(20260723);
+
+  /* ---------- 3. Views ---------- */
+  var cvF = document.getElementById('field'), cxF = cvF.getContext('2d');
+  var cvG = document.getElementById('growth'), cxG = cvG.getContext('2d');
+  var slider = document.getElementById('tslider'), readout = document.getElementById('readout');
+  var fval = document.getElementById('fval'), verdict = document.getElementById('verdict');
+  var barSrc = document.getElementById('bar-src'), barDrag = document.getElementById('bar-drag');
+  var srcVal = document.getElementById('src-val'), dragVal = document.getElementById('drag-val');
+  var playBtn = document.getElementById('play');
+
+  var C = {
+    fieldBg: '#0d0e15', particle: '#7fb2ef', caustic: '#e8703f',
+    active: '#5b9ce6', dim: '#63615b', grid: '#20242e',
+    inkMuted: '#6f6e69', inkSec: '#a4a29a', halo: '#0a0c12'
+  };
+
+  var dpr = 1, preset = 'om03', ti = I_TODAY, playing = false, lastT = 0;
+  slider.max = STEPS; slider.value = ti;
+
+  function sizeCanvases() {
+    dpr = window.devicePixelRatio || 1;
+    var fw = document.getElementById('fieldwrap');
+    cvF.width = Math.round(fw.clientWidth * dpr);
+    cvF.height = Math.round(fw.clientHeight * dpr);
+    var gw = document.getElementById('growthwrap');
+    cvG.width = Math.round(gw.clientWidth * dpr);
+    cvG.height = Math.round(gw.clientHeight * dpr);
+    drawAll();
+  }
+
+  function drawField() {
+    var Dv = SOL[preset].D[ti], W = cvF.width, H = cvF.height;
+    cxF.fillStyle = C.fieldBg;
+    cxF.fillRect(0, 0, W, H);
+    var sz = Math.max(1.5, W / NP * 0.44);
+    for (var i = 0; i < NPART; i++) {
+      var de = Math.min(Dv, P.dc[i]);
+      var x = P.qx[i] + de * P.px[i], y = P.qy[i] + de * P.py[i];
+      x -= Math.floor(x); y -= Math.floor(y);
+      var j1 = 1 + de * P.l1[i], j2 = 1 + de * P.l2[i];
+      var rho = 1 / Math.max(0.01, j1 * j2);
+      var t = Math.max(0, Math.min(1, Math.log10(rho) * 0.5 + 0.5));
+      cxF.globalAlpha = 0.16 + 0.84 * t;
+      cxF.fillStyle = t > 0.82 ? C.caustic : C.particle;
+      cxF.fillRect(x * W, y * H, sz, sz);
+    }
+    cxF.globalAlpha = 1;
+  }
+
+  function drawGrowth() {
+    var W = cvG.width, H = cvG.height;
+    cxG.clearRect(0, 0, W, H);
+    var ml = 46 * dpr, mr = 80 * dpr, mt = 12 * dpr, mb = 30 * dpr;
+    var lx0 = Math.log(A0), lx1 = Math.log(A1);
+    var ly0 = Math.log(0.012), ly1 = Math.log(5.2);
+    function X(n) { return ml + (n - lx0) / (lx1 - lx0) * (W - ml - mr); }
+    function Y(d) { return H - mb - (Math.log(d) - ly0) / (ly1 - ly0) * (H - mt - mb); }
+
+    cxG.lineWidth = 1; cxG.strokeStyle = C.grid; cxG.fillStyle = C.inkMuted;
+    cxG.font = (11 * dpr) + 'px ui-sans-serif, system-ui, sans-serif';
+    cxG.textAlign = 'center';
+    [0.02, 0.1, 0.5, 1, 4].forEach(function (a) {
+      var x = X(Math.log(a));
+      cxG.beginPath(); cxG.moveTo(x, mt); cxG.lineTo(x, H - mb); cxG.stroke();
+      cxG.fillText(String(a), x, H - mb + 14 * dpr);
+    });
+    cxG.fillText('scale factor a', (ml + W - mr) / 2, H - mb + 27 * dpr);
+    cxG.textAlign = 'right';
+    [0.02, 0.1, 0.5, 1, 4].forEach(function (d) {
+      var y = Y(d);
+      cxG.beginPath(); cxG.moveTo(ml, y); cxG.lineTo(W - mr, y); cxG.stroke();
+      cxG.fillText(String(d), ml - 6 * dpr, y + 4 * dpr);
+    });
+    cxG.save(); cxG.translate(12 * dpr, (mt + H - mb) / 2); cxG.rotate(-Math.PI / 2);
+    cxG.textAlign = 'center'; cxG.fillText('growth factor D', 0, 0); cxG.restore();
+
+    cxG.textAlign = 'left';
+    cxG.fillText('D \u2192 a in matter domination \u00b7 shared initial conditions',
+      ml + 6 * dpr, mt + 12 * dpr);
+
+    var xT = X(0);
+    cxG.strokeStyle = C.inkSec; cxG.setLineDash([4 * dpr, 4 * dpr]);
+    cxG.beginPath(); cxG.moveTo(xT, mt); cxG.lineTo(xT, H - mb); cxG.stroke();
+    cxG.setLineDash([]);
+    cxG.fillStyle = C.inkSec;
+    cxG.fillText('today', xT + 4 * dpr, H - mb - 6 * dpr);
+
+    var ends = [];
+    ORDER.forEach(function (k) {
+      var act = (k === preset);
+      cxG.strokeStyle = act ? C.active : C.dim;
+      cxG.lineWidth = (act ? 2 : 1.2) * dpr;
+      cxG.beginPath();
+      for (var i = 0; i <= STEPS; i += 2) {
+        var x = X(N0 + i * dN), y = Y(SOL[k].D[i]);
+        if (i === 0) cxG.moveTo(x, y); else cxG.lineTo(x, y);
+      }
+      cxG.stroke();
+      ends.push({ k: k, y: Y(SOL[k].D[STEPS]), act: act });
+    });
+    /* de-overlap the direct end labels */
+    ends.sort(function (a, b) { return a.y - b.y; });
+    var i;
+    for (i = 1; i < ends.length; i++)
+      if (ends[i].y - ends[i - 1].y < 13 * dpr) ends[i].y = ends[i - 1].y + 13 * dpr;
+    for (i = ends.length - 2; i >= 0; i--)
+      if (ends[i + 1].y - ends[i].y < 13 * dpr) ends[i].y = ends[i + 1].y - 13 * dpr;
+    ends.forEach(function (e) {
+      cxG.fillStyle = e.act ? C.active : C.inkMuted;
+      cxG.fillText(PRESETS[e.k].tag, W - mr + 8 * dpr, e.y + 4 * dpr);
+    });
+
+    /* epoch markers: all three curves at the common a */
+    ORDER.forEach(function (k) {
+      if (k === preset) return;
+      var x = X(N0 + ti * dN), y = Y(SOL[k].D[ti]);
+      cxG.fillStyle = C.dim;
+      cxG.beginPath(); cxG.arc(x, y, 3 * dpr, 0, TAU); cxG.fill();
+    });
+    var xm = X(N0 + ti * dN), ym = Y(SOL[preset].D[ti]);
+    cxG.fillStyle = C.active;
+    cxG.beginPath(); cxG.arc(xm, ym, 4.5 * dpr, 0, TAU); cxG.fill();
+    cxG.lineWidth = 2 * dpr; cxG.strokeStyle = C.halo; cxG.stroke();
+  }
+
+  function updatePanel() {
+    var s = SOL[preset], a = Math.exp(N0 + ti * dN), z = 1 / a - 1;
+    var D = s.D[ti], f = s.F[ti], om = s.OM[ti];
+    var src = 1.5 * om, drag = (2 - 1.5 * om) * f;
+    readout.textContent = 'a = ' + a.toFixed(2) + ' \u00b7 z = ' + z.toFixed(2) +
+      (z < -0.005 ? ' (future)' : '') + ' \u00b7 D = ' + D.toFixed(2) +
+      ' \u00b7 \u03A9m(a) = ' + om.toFixed(2);
+    fval.textContent = f.toFixed(2);
+    verdict.textContent = f > 0.9 ? 'gravity holds expansion to a draw' :
+      (f > 0.35 ? 'contested \u2014 power-law growth' :
+        'expansion has won \u2014 \u03B4 frozen');
+    srcVal.textContent = src.toFixed(2);
+    dragVal.textContent = drag.toFixed(2);
+    barSrc.style.width = Math.round(Math.min(100, src / 1.6 * 100)) + '%';
+    barDrag.style.width = Math.round(Math.min(100, drag / 1.6 * 100)) + '%';
+  }
+
+  function drawAll() { drawField(); drawGrowth(); updatePanel(); }
+
+  /* ---------- 4. Interaction ---------- */
+  function setPreset(p) {
+    preset = p;
+    ORDER.forEach(function (k) {
+      document.getElementById('p-' + k).classList.toggle('active', k === p);
+    });
+    drawAll();
+  }
+  ORDER.forEach(function (k) {
+    document.getElementById('p-' + k).addEventListener('click', function () { setPreset(k); });
+  });
+
+  function sync() { slider.value = ti; drawAll(); }
+
+  slider.addEventListener('input', function () {
+    ti = Math.max(0, Math.min(STEPS, +slider.value)); drawAll();
+  });
+
+  document.getElementById('reseed').addEventListener('click', function () {
+    buildField(Math.floor(Math.random() * 1e9)); drawAll();
+  });
+
+  function togglePlay() {
+    playing = !playing;
+    if (playing && ti >= STEPS) { ti = 0; slider.value = 0; }
+    playBtn.textContent = playing ? 'Pause' : 'Play';
+    lastT = performance.now();
+    if (playing) requestAnimationFrame(tick);
+  }
+  playBtn.addEventListener('click', togglePlay);
+
+  function tick(now) {
+    if (!playing) return;
+    var dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+    ti = Math.min(STEPS, ti + Math.max(1, Math.round(0.8 * dt / dN))); /* 0.8 e-folds/s */
+    if (ti >= STEPS) { playing = false; playBtn.textContent = 'Play'; }
+    slider.value = ti; drawAll();
+    if (playing) requestAnimationFrame(tick);
+  }
+
+  window.addEventListener('keydown', function (e) {
+    var tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'BUTTON') return;
+    if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+    else if (e.key === 'ArrowRight') { ti = Math.min(STEPS, ti + 10); sync(); }
+    else if (e.key === 'ArrowLeft') { ti = Math.max(0, ti - 10); sync(); }
+  });
+
+  window.addEventListener('resize', sizeCanvases);
+  sizeCanvases();
+  setPreset('om03');
+})();
+</script>
+</body>
+</html>
