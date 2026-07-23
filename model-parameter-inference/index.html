@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How we infer model parameters</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#070b15;overflow:hidden}
+  canvas{display:block;width:100vw;height:100vh}
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<script>
+'use strict';
+/* ================================================================
+   One point in model space -> one predicted spectrum ->
+   compare with fixed data -> repeat -> a plausible region emerges.
+
+   Every frame is a pure function of a 23 s master clock.
+   The sampling schedule is precomputed with a seeded RNG,
+   so every loop is identical and the wrap is seamless.
+   Design space: 1920 x 1080, letterboxed to any window.
+   ================================================================ */
+
+/* ---------- timing ---------- */
+const T_TOTAL = 23.0;      // loop length (s)
+const TS2     = 7.9;       // phase 2: rapid sampling
+const TS3     = 15.3;      // phase 3: reveal
+
+/* ---------- design space & palette ---------- */
+const W = 1920, H = 1080;
+const BG   = '#070b15';
+const INK  = '#e9edf5';                    // titles, statement
+const MUT  = '#8b96aa';                    // axis labels, hint words
+const AXIS = 'rgba(190,200,222,0.28)';
+const DATA = '#f3f5fa';
+const ACCENT = [104,214,255];              // cool: good models
+const WARM   = [226,122,90];               // warm: poor matches
+
+/* ---------- layout ---------- */
+const LP = {x:130,  y:170, w:710, h:620};  // left: parameter space
+const RP = {x:1080, y:170, w:720, h:590};  // right: spectrum plot
+const lmap = (u,v) => ({x: LP.x + u*LP.w, y: LP.y + LP.h - v*LP.h});
+const rx = x => RP.x + x*RP.w;
+const ry = y => RP.y + RP.h - y*RP.h;
+
+/* ---------- truth & posterior geometry (in unit parameter square) ---------- */
+const STAR = {u:0.62, v:0.42};
+const PHI  = -28*Math.PI/180;              // ellipse tilt (degeneracy direction)
+const SA = 0.155, SB = 0.085;              // 1-sigma semi-axes
+const CF = Math.cos(PHI), SF = Math.sin(PHI);
+
+/* ---------- small helpers ---------- */
+const clamp = (x,a,b) => Math.min(b, Math.max(a,x));
+const c01   = x => clamp(x,0,1);
+const lerp  = (a,b,t) => a + (b-a)*t;
+const eo    = x => 1 - Math.pow(1 - c01(x), 3);        // ease-out
+const eio   = x => { x = c01(x); return x*x*(3-2*x); };// ease-in-out
+const mix   = (A,B,t) => `rgb(${Math.round(lerp(A[0],B[0],t))},${Math.round(lerp(A[1],B[1],t))},${Math.round(lerp(A[2],B[2],t))})`;
+const rgba  = (A,a) => `rgba(${A[0]},${A[1]},${A[2]},${a})`;
+function mulberry32(s){return function(){s|=0;s=s+0x6D2B79F5|0;
+  let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;
+  return ((t^t>>>14)>>>0)/4294967296;};}
+
+/* ---------- forward model: (u,v) -> schematic P(k) ---------- */
+/* Broad rise and decline with subtle damped wiggles.
+   u controls amplitude, v controls the turnover scale.            */
+function spectrum(x,u,v){
+  const A  = 0.42 + 0.55*u;
+  const xp = 0.24 + 0.22*v;
+  const s  = x/xp;
+  const base = Math.pow(s,1.35) * Math.exp(0.7714*(1 - Math.pow(s,1.75))); // peaks at 1
+  const wig  = 1 + 0.05*Math.sin(22*x + 1.2)*Math.exp(-Math.pow((x-0.42)/0.30,2));
+  return Math.min(0.96, A*base*wig);
+}
+/* Agreement with the data, as a smooth 0..1 score (Gaussian in a tilted metric). */
+function quality(u,v){
+  const du = u-STAR.u, dv = v-STAR.v;
+  const a = CF*du + SF*dv, b = -SF*du + CF*dv;
+  return Math.exp(-0.5*((a/SA)**2 + (b/SB)**2));
+}
+const qcol = q => mix(WARM, ACCENT, Math.pow(q,0.6));
+
+/* ---------- fixed observation (seeded once, never changes) ---------- */
+const OBS = (() => {
+  const r = mulberry32(20260724), pts = [];
+  for(let i=0;i<14;i++){
+    const x = 0.05 + 0.90*Math.pow(i/13, 1.12);
+    const n = (r()+r()+r())/1.5 - 1;                    // soft, bounded noise
+    const y = spectrum(x, STAR.u, STAR.v)*(1 + 0.045*n);
+    pts.push({x, y, e: 0.05*y + 0.013});
+  }
+  return pts;
+})();
+
+/* ---------- sampling schedule (precomputed => identical every loop) ----------
+   Phase 1: three scripted trials (poor, better, good).
+   Phase 2: accelerating stochastic exploration; occasional far-out
+   excursions early, then sustained wandering *within* the plausible
+   region -- never a collapse onto a single optimum.                       */
+function slowItem(p, t0, linger){
+  return {...p, q:quality(p.u,p.v), slow:true, t0,
+    pop:[t0, t0+0.30], comet:[t0+0.32, t0+0.95], draw:[t0+0.85, t0+1.55],
+    cmp:[t0+1.55, t0+2.10],
+    fade: linger ? [7.70, 8.35] : [t0+2.12, t0+2.45]};
+}
+const ITEMS = (() => {
+  const it = [
+    slowItem({u:0.18, v:0.80}, 0.55, false),   // poor
+    slowItem({u:0.44, v:0.58}, 3.00, false),   // better
+    slowItem({u:0.60, v:0.45}, 5.45, true),    // good (lingers)
+  ];
+  const r = mulberry32(1234567);
+  const g = () => Math.sqrt(-2*Math.log(Math.max(r(),1e-9)))*Math.cos(2*Math.PI*r());
+  let t = TS2 + 0.15;
+  while(t < TS3 - 0.5){
+    const p = (t-TS2)/(TS3-TS2);
+    let u, v;
+    const explore = p < 0.86 && r() < 0.30*(1-p) + 0.05;
+    if(explore){ u = 0.07 + 0.86*r(); v = 0.07 + 0.86*r(); }
+    else{
+      const s = p > 0.86 ? 0.8 : 1.8 - 1.0*Math.min(1, 1.2*p);
+      const a = g()*SA*s, b = g()*SB*s;
+      u = clamp(STAR.u + CF*a - SF*b, 0.05, 0.95);
+      v = clamp(STAR.v + SF*a + CF*b, 0.05, 0.95);
+    }
+    const iv = 0.42 - 0.26*p;                              // shrinking interval
+    const cd = clamp(iv*0.50, 0.10, 0.28);                 // comet duration
+    const dd = clamp(iv*0.55, 0.14, 0.40);                 // curve-draw duration
+    it.push({u, v, q:quality(u,v), slow:false, t0:t,
+      pop:[t, t+0.16], comet:[t, t+cd], draw:[t+0.8*cd, t+0.8*cd+dd],
+      cmp:null, fade:[t+iv+0.02, t+iv+0.26]});
+    t += iv;
+  }
+  return it;
+})();
+
+/* ---------- posterior contour & predictive band (precomputed) ---------- */
+function ellipsePts(k, n=72){
+  const p = [];
+  for(let i=0;i<=n;i++){
+    const th = i/n*2*Math.PI, a = Math.cos(th)*SA*k, b = Math.sin(th)*SB*k;
+    p.push(lmap(STAR.u + CF*a - SF*b, STAR.v + SF*a + CF*b));
+  }
+  return p;
+}
+const CONTOUR = ellipsePts(1.5);
+const BAND = (() => {           // pointwise envelope over the 1-sigma boundary
+  const th = [STAR];
+  for(let i=0;i<28;i++){
+    const a = Math.cos(i/28*2*Math.PI)*SA, b = Math.sin(i/28*2*Math.PI)*SB;
+    th.push({u:STAR.u + CF*a - SF*b, v:STAR.v + SF*a + CF*b});
+  }
+  const N = 140, X = [], LO = [], HI = [];
+  for(let i=0;i<N;i++){
+    const x = 0.02 + 0.96*i/(N-1);
+    let lo = 1e9, hi = -1e9;
+    for(const q of th){ const y = spectrum(x,q.u,q.v); lo = Math.min(lo,y); hi = Math.max(hi,y); }
+    X.push(x); LO.push(lo); HI.push(hi);
+  }
+  return {X, LO, HI};
+})();
+
+/* ---------- canvas plumbing ---------- */
+const cv = document.getElementById('stage'), ctx = cv.getContext('2d');
+let SCL = 1, OX = 0, OY = 0, DPR = 1;
+function resize(){
+  DPR = window.devicePixelRatio || 1;
+  cv.width = innerWidth*DPR; cv.height = innerHeight*DPR;
+  SCL = Math.min(innerWidth/W, innerHeight/H);
+  OX = (innerWidth - W*SCL)/2; OY = (innerHeight - H*SCL)/2;
+}
+addEventListener('resize', resize); resize();
+
+const FONT = (w,s) => `${w} ${s}px "Inter","Segoe UI","Helvetica Neue",Arial,sans-serif`;
+function text(str,x,y,size,color,alpha=1,weight=500,align='center',ls='0.02em'){
+  if(alpha<=0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  ctx.font = FONT(weight,size); ctx.textAlign = align; ctx.textBaseline = 'middle';
+  ctx.letterSpacing = ls;
+  ctx.fillText(str,x,y);
+  ctx.restore();
+}
+
+/* ---------- static chrome: titles, axes, axis labels ---------- */
+function drawChrome(){
+  text('Possible models', LP.x+LP.w/2, 118, 30, INK, 1, 600, 'center', '0.04em');
+  text('Observation',     RP.x+RP.w/2, 118, 30, INK, 1, 600, 'center', '0.04em');
+  ctx.strokeStyle = AXIS; ctx.lineWidth = 2; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(LP.x, LP.y); ctx.lineTo(LP.x, LP.y+LP.h); ctx.lineTo(LP.x+LP.w, LP.y+LP.h);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(RP.x, RP.y); ctx.lineTo(RP.x, RP.y+RP.h); ctx.lineTo(RP.x+RP.w, RP.y+RP.h);
+  ctx.stroke();
+  text('Scale', RP.x+RP.w/2, RP.y+RP.h+42, 21, MUT, 1, 500, 'center', '0.10em');
+  ctx.save();
+  ctx.translate(RP.x-44, RP.y+RP.h/2); ctx.rotate(-Math.PI/2);
+  text('Clustering strength', 0, 0, 21, MUT, 1, 500, 'center', '0.10em');
+  ctx.restore();
+}
+
+/* ---------- fixed data points with error bars ---------- */
+function drawData(pulse){
+  ctx.save();
+  for(const d of OBS){
+    const x = rx(d.x), y = ry(d.y), e = d.e*RP.h;
+    ctx.strokeStyle = `rgba(235,240,250,${0.50 + 0.25*pulse})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x, y-e); ctx.lineTo(x, y+e); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x-5, y-e); ctx.lineTo(x+5, y-e);
+    ctx.moveTo(x-5, y+e); ctx.lineTo(x+5, y+e);
+    ctx.stroke();
+    ctx.fillStyle = DATA;
+    if(pulse > 0){ ctx.shadowColor = rgba(ACCENT,0.8); ctx.shadowBlur = 14*pulse; }
+    ctx.beginPath(); ctx.arc(x, y, 5.5, 0, 7); ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+  ctx.restore();
+}
+
+/* ---------- sampled points in parameter space ---------- */
+function drawPoints(t, g, p3){
+  for(const it of ITEMS){
+    if(t < it.pop[0]) continue;
+    const age  = t - it.pop[0];
+    const popd = it.slow ? 0.30 : 0.16;
+    const sc   = eo(age/popd);
+    /* persistent visibility grows with agreement; misfits decay */
+    let a = 0.14 + 0.76*Math.pow(it.q, 1.35);
+    if(it.q < 0.20) a *= lerp(1, 0.45, c01((age-1.2)/2.5));
+    if(it.q < 0.25) a *= lerp(1, 0.55, p3);
+    /* the freshly selected point stays bright while its trial runs */
+    const holdT = it.slow ? 1.0 : 0.35;
+    a = Math.max(a, 0.95*c01(1 - eio((age-holdT)/0.6)));
+    a *= g;
+    const P = lmap(it.u, it.v);
+    const r = (3.6 + 3.2*Math.pow(it.q, 0.8))*sc;
+    ctx.globalAlpha = a; ctx.fillStyle = qcol(it.q);
+    ctx.beginPath(); ctx.arc(P.x, P.y, r, 0, 7); ctx.fill();
+    /* selection glow ring */
+    const rr = age/0.55;
+    if(rr < 1){
+      ctx.globalAlpha = 0.7*(1-rr)*g;
+      ctx.strokeStyle = rgba(ACCENT,1); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(P.x, P.y, 8 + 30*eo(rr), 0, 7); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+/* ---------- travelling arrow: point -> spectrum panel ---------- */
+function cometPos(it, e){
+  const p0 = lmap(it.u, it.v);
+  const p2 = {x: RP.x - 6, y: ry(Math.max(0.02, spectrum(0.03, it.u, it.v)))};
+  const cp = {x: (p0.x+p2.x)/2, y: Math.min(p0.y, p2.y) - 120};
+  const s = 1 - e;
+  return {x: s*s*p0.x + 2*s*e*cp.x + e*e*p2.x,
+          y: s*s*p0.y + 2*s*e*cp.y + e*e*p2.y};
+}
+function drawComet(it, t, g){
+  const [t0,t1] = it.comet;
+  if(t < t0 || t > t1 + 0.08) return;
+  const e = eio((t-t0)/(t1-t0));
+  const fade = t > t1 ? 1 - (t-t1)/0.08 : 1;
+  ctx.save(); ctx.lineCap = 'round';
+  for(let j=8; j>=1; j--){                              // fading trail
+    const e0 = Math.max(0, e - j*0.022), e1 = Math.max(0, e - (j-1)*0.022);
+    if(e1 <= 0) continue;
+    const a = cometPos(it,e0), b = cometPos(it,e1);
+    ctx.strokeStyle = rgba(ACCENT, 0.55*(1-j/9)*fade*g);
+    ctx.lineWidth = lerp(1, 4, 1-j/9);
+    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+  }
+  const h = cometPos(it, e);                            // head
+  ctx.fillStyle = rgba(ACCENT, 0.95*fade*g);
+  ctx.shadowColor = rgba(ACCENT, 0.9); ctx.shadowBlur = 12;
+  ctx.beginPath(); ctx.arc(h.x, h.y, 4.5, 0, 7); ctx.fill();
+  ctx.restore();
+}
+
+/* ---------- prediction curves ---------- */
+function curveState(it, t){
+  const p = (t - it.draw[0])/(it.draw[1] - it.draw[0]);
+  if(p <= 0) return null;
+  let a = 1;
+  if(t > it.fade[0]) a = 1 - c01((t - it.fade[0])/(it.fade[1] - it.fade[0]));
+  if(a <= 0) return null;
+  return {prog: eo(c01(p)), alpha: a};
+}
+function drawCurve(it, st, g){
+  const a = (0.30 + 0.62*Math.pow(it.q, 0.8))*st.alpha*g;
+  const n = Math.max(2, Math.floor(150*st.prog));
+  ctx.save();
+  ctx.beginPath(); ctx.rect(RP.x-2, RP.y-14, RP.w+16, RP.h+16); ctx.clip();
+  ctx.strokeStyle = qcol(it.q); ctx.globalAlpha = a;
+  ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  if(it.q > 0.55){ ctx.shadowColor = rgba(ACCENT,0.55); ctx.shadowBlur = 10; }
+  ctx.beginPath();
+  for(let i=0; i<=n; i++){
+    const x = 0.02 + 0.96*(i/150);
+    const px = rx(x), py = ry(spectrum(x, it.u, it.v));
+    i ? ctx.lineTo(px,py) : ctx.moveTo(px,py);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* ---------- phase 3: contour + predictive band ---------- */
+function contourPath(f){
+  const s = lerp(0.92, 1, f), c = lmap(STAR.u, STAR.v);
+  ctx.translate(c.x, c.y); ctx.scale(s, s); ctx.translate(-c.x, -c.y);
+  ctx.beginPath();
+  CONTOUR.forEach((p,i) => i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y));
+  ctx.closePath();
+}
+function drawContourFill(f, g){
+  if(f <= 0) return;
+  ctx.save(); contourPath(f);
+  ctx.fillStyle = rgba(ACCENT, 0.10*f*g); ctx.fill();
+  ctx.restore();
+}
+function drawContourEdge(f, g){
+  if(f <= 0) return;
+  ctx.save(); contourPath(f);
+  ctx.strokeStyle = rgba(ACCENT, 0.55*f*g); ctx.lineWidth = 2;
+  ctx.shadowColor = rgba(ACCENT, 0.5); ctx.shadowBlur = 14*f;
+  ctx.stroke();
+  ctx.restore();
+}
+function drawBand(f, g){
+  if(f <= 0) return;
+  const {X, LO, HI} = BAND, w = eo(f);          // band grows out of its midline
+  ctx.save();
+  ctx.beginPath();
+  for(let i=0; i<X.length; i++){
+    const m = (LO[i]+HI[i])/2, y = m + (HI[i]-m)*w;
+    const px = rx(X[i]), py = ry(y);
+    i ? ctx.lineTo(px,py) : ctx.moveTo(px,py);
+  }
+  for(let i=X.length-1; i>=0; i--){
+    const m = (LO[i]+HI[i])/2, y = m + (LO[i]-m)*w;
+    ctx.lineTo(rx(X[i]), ry(y));
+  }
+  ctx.closePath();
+  ctx.fillStyle = rgba(ACCENT, 0.17*f*g); ctx.fill();
+  ctx.strokeStyle = rgba(ACCENT, 0.30*f*g); ctx.lineWidth = 1; ctx.stroke();
+  ctx.restore();
+}
+
+/* ---------- floating words & final statement ---------- */
+function drawLabels(t, g, p3l, p3s){
+  const gapX = (LP.x + LP.w + RP.x)/2;
+  for(const it of ITEMS){
+    if(!it.slow) continue;
+    const st = curveState(it, t);
+    if(st){                                              // "Prediction" rides the curve peak
+      const xp = 0.24 + 0.22*it.v;
+      text('Prediction', rx(xp), ry(spectrum(xp, it.u, it.v)) - 40, 22, qcol(it.q),
+           0.85*st.alpha*Math.min(1, st.prog*2)*g, 600, 'center', '0.14em');
+    }
+    if(it.cmp && t > it.cmp[0] && t < it.cmp[1]){
+      const a = Math.sin(Math.PI*(t - it.cmp[0])/(it.cmp[1] - it.cmp[0]));
+      text('Compare', RP.x+RP.w/2, RP.y+34, 22, MUT, 0.9*a*g, 600, 'center', '0.16em');
+    }
+    if(it !== ITEMS[2] && t > it.fade[0] && t < it.fade[0] + 0.6){
+      const a = Math.sin(Math.PI*(t - it.fade[0])/0.6);
+      text('Repeat', gapX, H*0.46, 22, MUT, 0.85*a*g, 600, 'center', '0.16em');
+    }
+  }
+  if(t > TS2 && t < TS2 + 0.9){                          // once more as sampling accelerates
+    const a = Math.sin(Math.PI*(t - TS2)/0.9);
+    text('Repeat', gapX, H*0.46, 22, MUT, 0.85*a*g, 600, 'center', '0.16em');
+  }
+  if(p3l > 0){
+    const topY = Math.min(...CONTOUR.map(p => p.y));
+    text('Models consistent with the data', lmap(STAR.u, 0).x, topY - 30,
+         25, INK, 0.95*p3l*g, 600);
+  }
+  if(p3s > 0){
+    text('Many possible models are tested.', W/2, 903, 38, INK, p3s*g, 600);
+    text('The observations reveal which regions remain plausible.', W/2, 956, 38, INK, p3s*g, 600);
+  }
+}
+
+/* ---------- frame ---------- */
+function render(t){
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.fillStyle = BG; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.setTransform(SCL*DPR, 0, 0, SCL*DPR, OX*DPR, OY*DPR);
+
+  /* dynamic content fades at the loop seam; chrome and data persist */
+  const g   = Math.min(eio(t/0.45), 1 - eio((t-22.2)/0.8));
+  const p3c = eio(c01((t-15.7)/1.2));   // contour
+  const p3b = eio(c01((t-16.3)/1.0));   // predictive band
+  const p3l = eio(c01((t-16.9)/0.8));   // region label
+  const p3s = eio(c01((t-17.8)/0.8));   // final statement
+
+  drawChrome();
+  drawContourFill(p3c, g);
+  drawPoints(t, g, p3c);
+  drawContourEdge(p3c, g);
+
+  let pulse = 0;
+  for(const it of ITEMS) drawComet(it, t, g);
+  for(const it of ITEMS){
+    const st = curveState(it, t);
+    if(st) drawCurve(it, st, g*(1 - 0.85*p3b));          // curves yield to the band
+    if(it.slow && it.cmp && it.q > 0.55 && t > it.cmp[0] && t < it.cmp[1])
+      pulse = Math.max(pulse, Math.sin(Math.PI*(t - it.cmp[0])/(it.cmp[1] - it.cmp[0])));
+  }
+  drawBand(p3b, g);
+  drawData(pulse*g);
+  drawLabels(t, g, p3l, p3s);
+}
+
+/* ---------- master clock ---------- */
+const t0 = performance.now();
+(function frame(now){
+  render(((now - t0)/1000) % T_TOTAL);
+  requestAnimationFrame(frame);
+})(t0);
+</script>
+</body>
+</html>
