@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Light from the Distant Past</title>
+<style>
+  :root{
+    --sky:#04060C; --ink:#E9ECFA; --muted:#98A0C6; --line:#26305C;
+    --gold:#FFD166; --pale:#9DB4E0;
+    --mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
+    --display:"Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--sky);overflow:hidden;cursor:default;
+    -webkit-font-smoothing:antialiased}
+  #cv{position:fixed;inset:0;width:100%;height:100%;display:block}
+
+  /* HUD lives in a div matched to the letterboxed 16:9 stage.
+     Its font-size is set from stage height in JS; everything inside is em-based. */
+  #stage{position:fixed;pointer-events:none;font-family:var(--mono);color:var(--ink)}
+
+  #headline{
+    position:absolute;top:4.2%;left:0;right:0;text-align:center;
+    font-family:var(--display);font-size:2.6em;letter-spacing:.02em;
+    color:var(--ink);text-shadow:0 0 24px rgba(157,180,224,.25);
+    font-variant-numeric:tabular-nums;
+  }
+  #caption{
+    position:absolute;top:13.4%;left:0;right:0;text-align:center;
+    font-size:.82em;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--muted);opacity:0;
+  }
+  #finaltitle{
+    position:absolute;top:0;bottom:0;left:0;right:0;display:flex;
+    align-items:center;justify-content:center;text-align:center;
+    font-family:var(--display);font-size:2.3em;line-height:1.4;
+    letter-spacing:.03em;color:#EDEAE0;opacity:0;padding:0 14%;
+    text-shadow:0 0 30px rgba(4,6,12,.9), 0 0 60px rgba(4,6,12,.9);
+  }
+
+  #meter{position:absolute;left:3.4%;bottom:5.2%;width:34%}
+  .mrow{display:flex;justify-content:space-between;align-items:baseline;
+    margin-bottom:.34em}
+  .mlab{font-size:.66em;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--muted)}
+  .mval{font-size:.98em;color:var(--ink);font-variant-numeric:tabular-nums;
+    white-space:nowrap}
+  #bar{position:relative;height:2px;background:var(--line);border-radius:1px;
+    margin-top:.7em}
+  #fill{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:1px;
+    background:linear-gradient(90deg,var(--pale),var(--gold))}
+  .tick{position:absolute;top:-0.25em;width:1px;height:.62em;
+    background:var(--muted);opacity:.55}
+  .ticklab{position:absolute;top:.65em;transform:translateX(-50%);
+    font-size:.58em;color:var(--muted);opacity:.8;white-space:nowrap}
+
+  #foot{
+    position:absolute;right:3.4%;bottom:5.2%;text-align:right;
+    font-size:.62em;letter-spacing:.06em;color:var(--muted);opacity:.55;
+    max-width:30%;line-height:1.6;
+  }
+  #pausehint{
+    position:absolute;left:0;right:0;bottom:1.6%;text-align:center;
+    font-size:.62em;letter-spacing:.2em;text-transform:uppercase;
+    color:var(--muted);opacity:0;transition:opacity .3s;
+  }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="stage">
+  <div id="headline"></div>
+  <div id="caption"></div>
+  <div id="finaltitle">Looking farther into space is looking farther back in&nbsp;time</div>
+  <div id="meter">
+    <div class="mrow"><span class="mlab">Distance from Earth</span><span class="mval" id="mdist"></span></div>
+    <div class="mrow"><span class="mlab">Lookback time</span><span class="mval" id="mtime"></span></div>
+    <div id="bar"><div id="fill"></div></div>
+  </div>
+  <div id="foot">light-travel distance &mdash; a map of lookback time, not a flight through space</div>
+  <div id="pausehint">paused &mdash; click to play &middot; drag or &larr; &rarr; to scrub</div>
+</div>
+
+<script>
+'use strict';
+/* ================================================================
+   Light from the Distant Past
+   A continuous log-scale zoom from Earth to the cosmic microwave
+   background. World unit: the light-second, so that distance and
+   lookback time are the same number read two ways.
+   ================================================================ */
+
+const TAU = Math.PI*2;
+
+/* ---- physical scales, in light-seconds ---- */
+const C_KM   = 299792.458;
+const YEAR_S = 3.15576e7;            // Julian year, seconds
+const LY  = YEAR_S;                  // 1 light-year  = 3.156e7 light-seconds
+const KLY = 1e3*LY, MLY = 1e6*LY, GLY = 1e9*LY;
+const AU  = 499.005;
+const R_EARTH = 6371/C_KM, R_MOON = 1737/C_KM, D_MOON = 384400/C_KM;
+const R_SUN   = 696000/C_KM;
+const D_CMB   = 13.79*GLY;           // light-travel distance to last scattering
+
+/* ---- deterministic RNG (mulberry32) so every loop is identical ---- */
+function mulberry32(seed){
+  let a = seed>>>0;
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a>>>15), 1 | a);
+    t = (t + Math.imul(t ^ (t>>>7), 61 | t)) ^ t;
+    return ((t ^ (t>>>14)) >>> 0) / 4294967296;
+  };
+}
+const rng = mulberry32(20260723);
+const rnd = (a,b)=> a + (b-a)*rng();
+const pick = arr => arr[Math.floor(rng()*arr.length)];
+
+/* ---- easing helpers ---- */
+const clamp = (x,a,b)=> Math.max(a, Math.min(b,x));
+function sstep(e0,e1,x){ const t = clamp((x-e0)/(e1-e0),0,1); return t*t*(3-2*t); }
+const up   = (x,a,b)=> sstep(a,b,x);
+const down = (x,c,d)=> 1 - sstep(c,d,x);
+const trap = (x,a,b,c,d)=> up(x,a,b)*down(x,c,d);
+
+/* ================================================================
+   Camera: keyframes of (time s, log10 half-frame-height in ls).
+   Monotone cubic (Fritsch–Carlson) interpolation gives smooth
+   continuous motion: eased dwells, fast transit of empty decades.
+   ================================================================ */
+const KEYS = [
+  [ 0.0, -1.52],[ 1.35, -1.52],  // Earth fills the frame (h ~ 9000 km), dwell
+  [ 3.3,  0.34],           // Moon orbit (h ~ 2.2 light-seconds)
+  [ 5.8,  2.69],[ 7.0, 2.69],    // the Sun, 8 light-minutes away — dwell
+  [ 8.6,  4.32],           // full Solar System (h ~ 42 AU)
+  [12.5, 12.34],[14.4, 12.34],   // Milky Way (h ~ 70 kly), dwell
+  [16.7, 13.70],[18.1, 13.70],   // Local Group (h ~ 1.6 Mly), dwell
+  [20.4, 15.99],[21.3, 15.99],   // cosmic web (h ~ 310 Mly), dwell
+  [23.5, 17.055],[24.7, 17.055], // survey wedge (h ~ 3.6 Gly), dwell
+  [27.1, 17.56],           // distant galaxies + quasars (h ~ 11.5 Gly)
+  [29.1, 17.719],          // CMB ring on screen (h ~ 16.5 Gly)
+  [31.8, 17.742],          // near-static hold under final title
+];
+const T_CYCLE = 33.0;      // fade-out overlaps the restart for a clean loop
+
+function buildPchip(keys){
+  const n = keys.length, t = keys.map(k=>k[0]), y = keys.map(k=>k[1]);
+  const h = [], d = [];
+  for(let i=0;i<n-1;i++){ h.push(t[i+1]-t[i]); d.push((y[i+1]-y[i])/h[i]); }
+  const m = new Array(n);
+  m[0] = d[0]; m[n-1] = d[n-2];
+  for(let i=1;i<n-1;i++){
+    if(d[i-1]*d[i] <= 0) m[i] = 0;
+    else{
+      const w1 = 2*h[i]+h[i-1], w2 = h[i]+2*h[i-1];
+      m[i] = (w1+w2) / (w1/d[i-1] + w2/d[i]);
+    }
+  }
+  return function(x){
+    if(x <= t[0]) return y[0];
+    if(x >= t[n-1]) return y[n-1];
+    let i = 0;
+    while(x > t[i+1]) i++;
+    const s = (x-t[i])/h[i], s2 = s*s, s3 = s2*s;
+    return (2*s3-3*s2+1)*y[i] + (s3-2*s2+s)*h[i]*m[i]
+         + (-2*s3+3*s2)*y[i+1] + (s3-s2)*h[i]*m[i+1];
+  };
+}
+const logH = buildPchip(KEYS);
+
+/* ================================================================
+   Pre-rendered sprites (all procedural, all seeded)
+   ================================================================ */
+function makeCanvas(w,h){ const c = document.createElement('canvas'); c.width=w; c.height=h; return c; }
+
+function glowSprite(size, stops){
+  const c = makeCanvas(size,size), g = c.getContext('2d');
+  const grad = g.createRadialGradient(size/2,size/2,0, size/2,size/2,size/2);
+  for(const [p,col] of stops) grad.addColorStop(p,col);
+  g.fillStyle = grad; g.fillRect(0,0,size,size);
+  return c;
+}
+const sunGlow  = glowSprite(128,[[0,'rgba(255,236,190,0.95)'],[0.18,'rgba(255,214,130,0.55)'],[0.5,'rgba(255,190,100,0.12)'],[1,'rgba(255,190,100,0)']]);
+const softBlob = glowSprite(64, [[0,'rgba(196,208,236,0.75)'],[0.45,'rgba(196,208,236,0.28)'],[1,'rgba(196,208,236,0)']]);
+const goldHalo = glowSprite(64, [[0,'rgba(255,224,168,0.5)'],[0.5,'rgba(255,224,168,0.12)'],[1,'rgba(255,224,168,0)']]);
+const obsHalo  = glowSprite(64, [[0,'rgba(220,230,250,0.55)'],[0.5,'rgba(220,230,250,0.14)'],[1,'rgba(220,230,250,0)']]);
+
+/* ---- Earth at night: dark sphere, thin atmosphere, sparse city light ---- */
+function makeEarthSprite(){
+  const S = 512, R = 210, c = makeCanvas(S,S), g = c.getContext('2d');
+  const cx = S/2, cy = S/2;
+  // night-side body, faintly lit toward upper right
+  let grad = g.createRadialGradient(cx+R*0.35, cy-R*0.35, R*0.1, cx, cy, R);
+  grad.addColorStop(0,'#1A2A55'); grad.addColorStop(0.45,'#0D1633');
+  grad.addColorStop(1,'#05091A');
+  g.fillStyle = grad;
+  g.beginPath(); g.arc(cx,cy,R,0,TAU); g.fill();
+  // city lights clustered into a few "continents"
+  g.save(); g.beginPath(); g.arc(cx,cy,R-2,0,TAU); g.clip();
+  const cont = [];
+  for(let i=0;i<6;i++){
+    const a = rnd(0,TAU), r = rnd(0.15,0.8)*R;
+    cont.push([cx+Math.cos(a)*r, cy+Math.sin(a)*r*0.85]);
+  }
+  for(let i=0;i<540;i++){
+    const [bx,by] = pick(cont);
+    const x = bx + rnd(-1,1)*R*0.22, y = by + rnd(-1,1)*R*0.16;
+    const dx=x-cx, dy=y-cy;
+    if(dx*dx+dy*dy > (R-8)*(R-8)) continue;
+    // dimmer near the limb (viewing angle)
+    const limb = 1 - Math.sqrt(dx*dx+dy*dy)/R;
+    g.fillStyle = `rgba(250,206,128,${rnd(0.2,0.8)*(0.35+0.65*limb)})`;
+    const s = rnd(0.8,2.4);
+    g.fillRect(x,y,s,s);
+  }
+  g.restore();
+  // atmosphere rim
+  g.save();
+  g.strokeStyle = 'rgba(127,168,232,0.5)'; g.lineWidth = 2.4;
+  g.shadowColor = 'rgba(127,168,232,0.8)'; g.shadowBlur = 16;
+  g.beginPath(); g.arc(cx,cy,R+1.5,0,TAU); g.stroke();
+  // brighter day-side crescent hint, upper right
+  g.strokeStyle = 'rgba(189,212,245,0.65)'; g.lineWidth = 3; g.shadowBlur = 10;
+  g.beginPath(); g.arc(cx,cy,R+1.5,-1.25,-0.15); g.stroke();
+  g.restore();
+  return {c, R, S};
+}
+const earthSpr = makeEarthSprite();
+
+/* ---- Milky Way: restrained face-on spiral, pre-rendered once ---- */
+function makeGalaxySprite(seed, arms, warm){
+  const rr = mulberry32(seed);
+  const rr2 = (a,b)=> a+(b-a)*rr();
+  const S = 1024, R = 470, c = makeCanvas(S,S), g = c.getContext('2d');
+  const cx=S/2, cy=S/2;
+  // outer halo + disk haze
+  let grad = g.createRadialGradient(cx,cy,0,cx,cy,R);
+  grad.addColorStop(0,'rgba(190,205,235,0.14)');
+  grad.addColorStop(0.45,'rgba(160,178,215,0.07)');
+  grad.addColorStop(1,'rgba(160,178,215,0)');
+  g.fillStyle=grad; g.beginPath(); g.arc(cx,cy,R,0,TAU); g.fill();
+  // spiral arms as soft stellar dots along log spirals
+  const b = 0.30;
+  for(let arm=0; arm<arms; arm++){
+    const phase = arm*(TAU/arms), weak = (arm%2===1) ? 0.45 : 1;
+    for(let th=0.4; th<2.35*TAU/2; th+=0.009){
+      const r = 0.115*R*Math.exp(b*th);
+      if(r>R*0.98) break;
+      const ang = th + phase;
+      const spread = 0.038*S*(r/R+0.3);
+      const nDots = (rr()<0.8)?2:3;
+      for(let k=0;k<nDots;k++){
+        const x = cx + Math.cos(ang)*r + rr2(-1,1)*spread;
+        const y = cy + Math.sin(ang)*r + rr2(-1,1)*spread;
+        const roll = rr();
+        const col = roll<0.68 ? '195,211,240' : roll<0.86 ? '235,223,194' : '159,182,230';
+        const fade = 1 - 0.55*(r/R);
+        g.fillStyle = `rgba(${col},${rr2(0.16,0.55)*fade*weak})`;
+        const s = rr2(0.9,2.3);
+        g.fillRect(x,y,s,s);
+      }
+    }
+  }
+  // a few soft star-forming knots — the subtle red accent
+  for(let i=0;i<26;i++){
+    const th = rr2(0.8,6.8), r = 0.115*R*Math.exp(b*th);
+    if(r>R*0.95) continue;
+    const ang = th + (rr()<0.5?0:Math.PI);
+    const x = cx+Math.cos(ang)*r, y = cy+Math.sin(ang)*r;
+    grad = g.createRadialGradient(x,y,0,x,y,rr2(6,14));
+    grad.addColorStop(0,'rgba(232,178,160,0.13)');
+    grad.addColorStop(1,'rgba(232,178,160,0)');
+    g.fillStyle=grad; g.beginPath(); g.arc(x,y,14,0,TAU); g.fill();
+  }
+  // bulge
+  grad = g.createRadialGradient(cx,cy,0,cx,cy,R*0.16);
+  grad.addColorStop(0, warm?'rgba(244,228,190,0.8)':'rgba(240,230,204,0.75)');
+  grad.addColorStop(0.4,'rgba(238,220,182,0.30)');
+  grad.addColorStop(1,'rgba(238,220,182,0)');
+  g.fillStyle=grad; g.beginPath(); g.arc(cx,cy,R*0.17,0,TAU); g.fill();
+  return {c, R, S};
+}
+const mwSpr  = makeGalaxySprite(11, 4, true);
+const m31Spr = makeGalaxySprite(47, 2, false);
+
+/* ---- CMB: soft mottled ring, low-saturation warm/cool blotches ---- */
+function makeCmbSprite(){
+  const S = 2048, R = 900, HW = 46, c = makeCanvas(S,S), g = c.getContext('2d');
+  const cx=S/2, cy=S/2;
+  // base band — faint and warm; the CMB is light, not a wall
+  g.strokeStyle = 'rgba(182,150,136,0.15)'; g.lineWidth = HW*2;
+  g.beginPath(); g.arc(cx,cy,R,0,TAU); g.stroke();
+  // mottling: hundreds of soft blobs at slightly warm / cool tones
+  for(let i=0;i<620;i++){
+    const th = rng()*TAU;
+    const r  = R + rnd(-1,1)*HW*0.8;
+    const x = cx+Math.cos(th)*r, y = cy+Math.sin(th)*r;
+    const rad = rnd(14,44);
+    const roll = rng();
+    const col = roll<0.52 ? '200,156,132' : roll<0.8 ? '152,160,198' : '208,186,164';
+    const grad = g.createRadialGradient(x,y,0,x,y,rad);
+    grad.addColorStop(0,`rgba(${col},${rnd(0.06,0.14)})`);
+    grad.addColorStop(1,`rgba(${col},0)`);
+    g.fillStyle=grad; g.beginPath(); g.arc(x,y,rad,0,TAU); g.fill();
+  }
+  // soften both edges of the band
+  g.globalCompositeOperation = 'destination-in';
+  const mask = g.createRadialGradient(cx,cy,R-HW*2.0,cx,cy,R+HW*2.0);
+  mask.addColorStop(0,'rgba(0,0,0,0)');
+  mask.addColorStop(0.35,'rgba(0,0,0,1)');
+  mask.addColorStop(0.65,'rgba(0,0,0,1)');
+  mask.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle = mask; g.fillRect(0,0,S,S);
+  g.globalCompositeOperation = 'source-over';
+  return {c, R, S, HW};
+}
+const cmbSpr = makeCmbSprite();
+
+/* ================================================================
+   Point fields (world coordinates in light-seconds)
+   ================================================================ */
+
+/* Solar System: Sun sits 1 AU from the frame centre — Earth is the
+   viewpoint, and visibly not the centre of its own system. */
+const SUN_TH = 3.55;                       // direction of the Sun, radians
+const SUN_X = Math.cos(SUN_TH)*AU, SUN_Y = Math.sin(SUN_TH)*AU;
+const PLANETS = [
+  {r:0.387*AU, s:1.3, col:'201,210,232'},
+  {r:0.723*AU, s:1.7, col:'232,222,200'},
+  {r:1.000*AU, s:1.8, col:'168,196,240', earthOrbit:true},
+  {r:1.524*AU, s:1.5, col:'216,164,143'},
+  {r:5.203*AU, s:2.6, col:'232,213,176'},
+  {r:9.537*AU, s:2.3, col:'226,214,190'},
+  {r:19.19*AU, s:1.9, col:'186,214,228'},
+  {r:30.07*AU, s:1.9, col:'168,190,236'},
+].map(p=>({...p, th: rnd(0,TAU)}));
+
+/* Star shells covering the transit from the Solar System to the Galaxy.
+   Everything converges toward the centre as the camera pulls out. */
+function makeShell(n, L0, L1){
+  const pts = [];
+  for(let i=0;i<n;i++){
+    const r = Math.pow(10, rnd(L0,L1));
+    const th = rnd(0,TAU);
+    const roll = rng();
+    pts.push({
+      x: Math.cos(th)*r, y: Math.sin(th)*r,
+      s: rnd(0.6,1.7),
+      a: rnd(0.25,0.8),
+      col: roll<0.8 ? '221,230,245' : roll<0.93 ? '242,223,192' : '238,186,168',
+      tw: rnd(2.5,6), ph: rnd(0,TAU),
+    });
+  }
+  return pts;
+}
+const SHELLS = [
+  {pts: makeShell(260, 8.0, 9.3),  win:[ 6.9, 7.9, 9.6, 10.8]},
+  {pts: makeShell(260, 9.3,10.8),  win:[ 8.6, 9.6,11.0, 12.0]},
+  {pts: makeShell(240,10.8,12.3),  win:[10.2,11.2,11.85,12.7]},
+];
+
+/* Milky Way placement: the observer (frame centre) sits 26 kly from
+   the galactic centre, about half-way out in the disk. */
+const GC_TH = 2.95, MW_R = 50*KLY;
+const MW_X = Math.cos(GC_TH)*26*KLY, MW_Y = Math.sin(GC_TH)*26*KLY;
+
+/* Local Group */
+const LG = [
+  {spr:m31Spr, d:2.50*MLY, th:-0.50, R:55*KLY, rot: 0.65, sq:0.38, a:0.95}, // Andromeda, tilted
+  {spr:m31Spr, d:2.73*MLY, th:-0.20, R:26*KLY, rot:-0.40, sq:0.72, a:0.70}, // Triangulum
+];
+const LG_BLOBS = [];
+LG_BLOBS.push({d:0.163*MLY, th:4.35, R:9*KLY, a:0.65});   // LMC
+LG_BLOBS.push({d:0.200*MLY, th:4.60, R:6*KLY, a:0.55});   // SMC
+for(let i=0;i<9;i++)
+  LG_BLOBS.push({d:Math.pow(10,rnd(Math.log10(0.4*MLY),Math.log10(1.9*MLY))),
+                 th:rnd(0,TAU), R:rnd(2.5,6.5)*KLY, a:rnd(0.24,0.42)});
+
+/* Cosmic web as a Voronoi foam: galaxies gather on the walls and
+   filaments between roughly uniform void cells, with knots (clusters)
+   where several cells meet — the geometry galaxy surveys actually map. */
+/* smooth periodic angular noise, used to roughen every fade that would
+   otherwise be a perfect circle centred on the observer */
+function angNoise(seed){
+  const rr = mulberry32(seed);
+  const p1 = rr()*TAU, p2 = rr()*TAU, p3 = rr()*TAU;
+  return th => 0.55*Math.sin(2*th+p1) + 0.30*Math.sin(3*th+p2) + 0.15*Math.sin(5*th+p3);
+}
+
+function buildFoam(o){
+  // Void centres over a padded disk so rim cells close. Seeds come from a
+  // clustered (Neyman–Scott) process — dense seed clumps make small voids,
+  // the gaps between parents make large ones — so cell sizes span a broad
+  // range instead of a single suspicious "BAO-like" scale.
+  // grade 0.5 = uniform density; larger values put more seeds (smaller
+  // cells) near the observer — like survey depth.
+  const pad = o.rMax*1.15, seeds = [];
+  const cell0 = pad*Math.sqrt(Math.PI/o.seeds);
+  const parents = [];
+  const nPar = Math.max(4, Math.round(o.seeds*0.4));
+  for(let i=0;i<nPar;i++){
+    const r = pad*Math.pow(rng(), o.grade||0.5), th = rnd(0,TAU);
+    parents.push([Math.cos(th)*r, Math.sin(th)*r]);
+  }
+  while(seeds.length < o.seeds){
+    if(rng() < 0.4){                               // uniform component
+      const r = pad*Math.pow(rng(), o.grade||0.5), th = rnd(0,TAU);
+      seeds.push([Math.cos(th)*r, Math.sin(th)*r]);
+    }else{                                         // clustered component
+      const [px,py] = parents[Math.floor(rng()*nPar)];
+      const a = rnd(0,TAU), rc = Math.abs(rnd(-1,1)+rnd(-1,1))*0.55*cell0;
+      seeds.push([px+Math.cos(a)*rc, py+Math.sin(a)*rc]);
+    }
+  }
+  const pts = [], knotCand = [];
+  for(let i=0;i<o.nCand;i++){
+    const rr = o.rMax*Math.sqrt(rng());            // area-uniform candidates
+    const th = rnd(0,TAU);
+    if(rr < o.rMin*(1+(o.rimJit ? 0.3*o.rimJit(th) : 0))) continue;
+    const x = Math.cos(th)*rr, y = Math.sin(th)*rr;
+    let d1=Infinity, d2=Infinity, d3=Infinity;     // three nearest voids
+    for(let s=0;s<seeds.length;s++){
+      const dx = x-seeds[s][0], dy = y-seeds[s][1];
+      const d = Math.sqrt(dx*dx+dy*dy);
+      if(d<d1){ d3=d2; d2=d1; d1=d; }
+      else if(d<d2){ d3=d2; d2=d; }
+      else if(d<d3){ d3=d; }
+    }
+    // wall thickness follows the local cell size (d1 ~ half a cell)
+    const wallLoc = o.wallFrac*2*d1 + 1e-9;
+    const u = (d2-d1)/wallLoc;                     // 0 on a wall midplane
+    if(u>2.2 || rng() > Math.exp(-u*u)) continue;  // keep only wall/filament galaxies
+    const nearKnot = (d3-d1) < wallLoc*1.4;        // several cells meet here
+    const p = o.emit(x,y,nearKnot,rr);
+    if(!p) continue;
+    if(nearKnot){ p.a = Math.min(p.a*1.35, 0.75); knotCand.push([x,y,d1]); }
+    pts.push(p);
+  }
+  // distinct cluster sites: thin the knot candidates to ~a cell apart
+  const knots = [];
+  for(const [x,y,d1] of knotCand){
+    if(Math.hypot(x,y) > o.rMax*0.96) continue;
+    if(knots.every(k=> Math.hypot(k.x-x, k.y-y) > (k.d+d1)*0.55)){
+      knots.push({x,y,d:d1});
+      const m = Math.round(rnd(o.clusterN*0.6, o.clusterN*1.4));
+      const rc0 = d1*0.10;                         // cluster size ~ local cell/10
+      for(let k=0;k<m;k++){
+        const a = rnd(0,TAU), rc = Math.abs(rnd(-1,1)+rnd(-1,1))*0.5*rc0;
+        const p = o.emit(x+Math.cos(a)*rc, y+Math.sin(a)*rc, true, Math.hypot(x,y));
+        if(p) pts.push(p);
+      }
+    }
+  }
+  // a light sprinkle of field galaxies — voids are empty, not perfectly so
+  for(let i=0;i<(o.nField||0);i++){
+    const rr = o.rMax*Math.sqrt(rng());
+    const th = rnd(0,TAU);
+    if(rr < o.rMin*(1+(o.rimJit ? 0.3*o.rimJit(th) : 0))) continue;
+    const p = o.emit(Math.cos(th)*rr, Math.sin(th)*rr, false, rr);
+    if(p){ p.a *= 0.45; pts.push(p); }
+  }
+  for(const p of pts) p.th = Math.atan2(p.y,p.x);
+  return {pts, halos:knots.map(k=>({x:k.x, y:k.y, R:k.d*0.16}))};
+}
+
+/* nearby web: out to ~650 Mly, void cells ~140 Mly across,
+   fading at an angularly-ragged rim into the deeper map */
+const rimN_near = angNoise(101), rimN_far = angNoise(207);
+const webNear = buildFoam({
+  seeds:88, grade:0.5, rMin:22*MLY, rMax:650*MLY, nCand:26000, wallFrac:0.075,
+  clusterN:34, nField:240, rimJit:rimN_near,
+  emit:(x,y,cl,r)=>{
+    const roll = rng();
+    const jj = 1 + 0.30*rimN_near(Math.atan2(y,x));
+    const rim = 1 - 0.65*sstep(430*MLY*jj, 650*MLY*jj, r);
+    return {x,y, s:rnd(0.7,1.7)+(cl?0.2:0),
+      a:rnd(0.2,0.55)*rim,
+      col: cl && roll<0.5 ? '227,217,191' : roll<0.75 ? '198,212,240' : '226,230,240'};
+  },
+});
+
+/* distant web: 0.35–13.3 Gly. Cells grow with distance, and the
+   galaxies get smaller, sparser, clumpier and slightly warmer —
+   a younger, less completely mapped Universe. */
+const webFar = buildFoam({
+  seeds:240, grade:0.83, rMin:0.35*GLY, rMax:13.3*GLY, nCand:95000, wallFrac:0.06,
+  clusterN:20, nField:300, rimJit:rimN_far,
+  emit:(x,y,cl,r)=>{
+    const zfac = clamp((r-6*GLY)/(7*GLY), 0, 1);   // 0 nearby → 1 at ~13 Gly
+    if(rng() < 0.55*zfac) return null;             // sparser when young
+    const roll = rng();
+    const cool = '198,212,240', mid = '214,204,206', warm = '216,180,154';
+    // blend in under the near web, along a ragged (non-circular) seam;
+    // the zfac evolution above stays perfectly radial — lookback is real physics
+    const jf = 1 + 0.35*rimN_far(Math.atan2(y,x));
+    const rin = sstep(0.35*GLY*jf, 0.85*GLY*jf, r);
+    return {x,y,
+      s: rnd(1.0,2.0)*(1-0.5*zfac)+(cl?0.2:0),
+      a: rnd(0.22,0.52)*(1-0.45*zfac)*rin,
+      col: roll < zfac*0.75 ? warm : roll < 0.55 ? cool : mid,
+      clump: zfac>0.4 && rng()<0.5};
+  },
+});
+
+/* quasars: compact luminous points in the young Universe; three are
+   placed inside the survey wedge so the fan shows them. */
+const QUASARS = [];
+for(let i=0;i<7;i++){
+  const th = i<3 ? -Math.PI/2 + rnd(-0.42,0.42) : rnd(0,TAU);
+  const r  = rnd(10.6,13.0)*GLY;
+  QUASARS.push({x:Math.cos(th)*r, y:Math.sin(th)*r, th,
+                pw:rnd(1.2,2.1), ph:rnd(0,TAU)});
+}
+
+/* survey wedge: a sector opening upward from the observer */
+const WEDGE_TH = -Math.PI/2, WEDGE_HALF = 0.60;
+
+/* ================================================================
+   Stage / canvas layout (16:9 letterboxed)
+   ================================================================ */
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const stageEl = document.getElementById('stage');
+const els = {
+  headline: document.getElementById('headline'),
+  caption:  document.getElementById('caption'),
+  final:    document.getElementById('finaltitle'),
+  mdist:    document.getElementById('mdist'),
+  mtime:    document.getElementById('mtime'),
+  fill:     document.getElementById('fill'),
+  bar:      document.getElementById('bar'),
+  foot:     document.getElementById('foot'),
+  meter:    document.getElementById('meter'),
+  hint:     document.getElementById('pausehint'),
+};
+let ST = {x:0,y:0,w:16,h:9}, DPR = 1;
+
+/* lookback axis for the progress bar: log10(seconds) */
+const BAR_L0 = -1.52, BAR_L1 = Math.log10(D_CMB);
+(function makeTicks(){
+  const ticks = [[1,'1 second'],[YEAR_S,'1 year'],[1e6*YEAR_S,''],[D_CMB,'13.8 billion years']];
+  for(const [sec,lab] of ticks){
+    const f = (Math.log10(sec)-BAR_L0)/(BAR_L1-BAR_L0);
+    const t = document.createElement('div');
+    t.className='tick'; t.style.left=(f*100)+'%'; els.bar.appendChild(t);
+    if(!lab) continue;
+    const l = document.createElement('div');
+    l.className='ticklab'; l.style.left=(f*100)+'%'; l.textContent=lab;
+    if(f>0.94){ l.style.transform='translateX(-88%)'; }
+    if(f<0.06){ l.style.transform='translateX(-8%)'; }
+    els.bar.appendChild(l);
+  }
+})();
+
+function resize(){
+  DPR = Math.min(window.devicePixelRatio||1, 2);
+  const W = window.innerWidth, H = window.innerHeight;
+  cv.width = W*DPR; cv.height = H*DPR;
+  let sw = W, sh = W*9/16;
+  if(sh > H){ sh = H; sw = H*16/9; }
+  ST = {x:(W-sw)/2, y:(H-sh)/2, w:sw, h:sh};
+  Object.assign(stageEl.style, {
+    left:ST.x+'px', top:ST.y+'px', width:ST.w+'px', height:ST.h+'px',
+    fontSize:(ST.h*0.0165)+'px',
+  });
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* ================================================================
+   Formatting: the same light-travel number, read as distance or time
+   ================================================================ */
+function sig(x, digits){ return Number(x.toPrecision(digits)).toLocaleString('en-US'); }
+
+function fmtTime(sec){
+  if(sec < 1)        return '< 1 second';
+  if(sec < 99.5)     return sig(sec, sec<10?2:2)+' seconds';
+  if(sec < 5940)     return sig(sec/60, 2)+' minutes';
+  if(sec < 1.728e5)  return sig(sec/3600, 2)+' hours';
+  if(sec < 2.85e7)   return sig(sec/86400, 2)+' days';
+  const yr = sec/YEAR_S;
+  if(yr < 9.95e5)    return sig(yr, 2)+' years';
+  if(yr < 9.95e8)    return sig(yr/1e6, 2)+' million years';
+  return sig(yr/1e9, 3)+' billion years';
+}
+function fmtDist(ls){
+  if(ls < 0.9)       return sig(ls*C_KM, 2)+' km';
+  if(ls < 99.5)      return sig(ls, 2)+' light-seconds';
+  if(ls < 5940)      return sig(ls/60, 2)+' light-minutes';
+  if(ls < 1.728e5)   return sig(ls/3600, 2)+' light-hours';
+  if(ls < 2.85e7)    return sig(ls/86400, 2)+' light-days';
+  const ly = ls/LY;
+  if(ly < 9.95e5)    return sig(ly, 2)+' light-years';
+  if(ly < 9.95e8)    return sig(ly/1e6, 2)+' million light-years';
+  return sig(ly/1e9, 3)+' billion light-years';
+}
+
+/* ================================================================
+   Per-frame drawing
+   ================================================================ */
+function dot(x,y,r,col,a){
+  ctx.fillStyle = `rgba(${col},${a})`;
+  ctx.beginPath(); ctx.arc(x,y,Math.max(r,0.5),0,TAU); ctx.fill();
+}
+function sprite(img,x,y,r,a,rot,sq){
+  if(a<=0.004 || r<0.3) return;
+  ctx.save(); ctx.globalAlpha = clamp(a,0,1);
+  ctx.translate(x,y);
+  if(rot) ctx.rotate(rot);
+  if(sq && sq!==1) ctx.scale(1,sq);
+  ctx.drawImage(img.c ?? img, -r,-r, 2*r,2*r);
+  ctx.restore();
+}
+const angDiff = (a,b)=>{ let d=(a-b)%TAU; if(d>Math.PI)d-=TAU; if(d<-Math.PI)d+=TAU; return Math.abs(d); };
+/* galaxies receding to a few pixels get a compact glow so they stay
+   readable as luminous objects rather than vanishing */
+function galaxyGlow(x,y,rW,a){
+  const g = 1 - clamp((rW-14)/14, 0, 1);
+  if(g<=0.01 || a<=0.004) return;
+  sprite(softBlob, x,y, Math.max(rW*1.5,2.5), a*0.5*g);
+  dot(x,y, Math.max(1.3, rW*0.16), '242,238,222', a*0.8*g);
+}
+
+function draw(t){
+  const L = logH(t), h = Math.pow(10,L);
+  const master = up(t,0,0.75) * down(t,31.75,32.75);
+
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.fillStyle = '#04060C';
+  ctx.fillRect(0,0,cv.width/DPR,cv.height/DPR);
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(ST.x,ST.y,ST.w,ST.h); ctx.clip();
+
+  // subtle vignette so the stage breathes
+  const cx = ST.x+ST.w/2, cy = ST.y+ST.h/2;
+  let vg = ctx.createRadialGradient(cx,cy,ST.h*0.2, cx,cy,ST.h*0.85);
+  vg.addColorStop(0,'rgba(13,19,42,0.35)'); vg.addColorStop(1,'rgba(4,6,12,0)');
+  ctx.fillStyle=vg; ctx.fillRect(ST.x,ST.y,ST.w,ST.h);
+
+  const pxls = (ST.h/2)/h;                 // screen px per light-second
+  const SX = x=> cx + x*pxls, SY = y=> cy + y*pxls;
+
+  /* layer opacities from log-scale windows */
+  const aEarth = trap(L,-3,-2, 0.75,1.45) * master;
+  const aMoon  = trap(L,-0.95,-0.4, 1.55,2.2) * master;
+  const aSS    = trap(L, 1.5,2.1, 4.55,6.1) * master;
+  const aSun   = trap(L, 1.5,2.1, 5.6,6.9) * master;
+  const aMW    = trap(L,10.6,11.65, 13.55,14.8) * master;
+  const aLG    = trap(L,12.9,13.55, 14.85,15.7) * master;
+  const aWebN  = up(L,14.05,15.25) * (0.34+0.66*down(L,16.8,17.5)) * master;
+  const aWebF  = up(L,15.85,16.75) * (1-0.25*up(L,17.60,17.75)) * master;
+  const wWide  = up(L,17.28,17.60);                       // wedge → full sky
+  const aWedge = up(L,16.45,16.95) * down(L,17.34,17.60) * master;
+  const wedgeDim = aWedge * (1-wWide);
+  const aCMB   = up(L,17.52,17.68) * master;
+  const aObs   = up(L,0.55,1.4) * master;
+
+  /* ---- CMB ring (farthest first) ---- */
+  if(aCMB>0.004){
+    const r = D_CMB*pxls;
+    sprite(cmbSpr, cx,cy, r*(cmbSpr.S/2)/cmbSpr.R, aCMB*0.85);
+  }
+
+  /* ---- distant web + quasars ---- */
+  if(aWebF>0.004){
+    for(const p of webFar.pts){
+      const r = Math.hypot(p.x,p.y);
+      if(r*pxls > ST.h*1.6) continue;
+      let f = 1;
+      if(wedgeDim>0.01){
+        const inw = 1 - sstep(WEDGE_HALF-0.07, WEDGE_HALF+0.07, angDiff(p.th,WEDGE_TH));
+        f = (1 - 0.74*wedgeDim*(1-inw)) * (1 + 0.3*wedgeDim*inw);
+      }
+      const x = SX(p.x), y = SY(p.y);
+      dot(x,y, p.s, p.col, Math.min(p.a*aWebF*f,0.85));
+      if(p.clump){ dot(x+2,y-1.4, p.s*0.6, p.col, p.a*aWebF*f*0.8);
+                   dot(x-1.6,y+1.8, p.s*0.5, p.col, p.a*aWebF*f*0.7); }
+    }
+    for(let i=0;i<QUASARS.length;i++){
+      const q = QUASARS[i];
+      let f = 1;
+      if(wedgeDim>0.01){
+        const inw = 1 - sstep(WEDGE_HALF-0.07, WEDGE_HALF+0.07, angDiff(q.th,WEDGE_TH));
+        f = 1 - 0.5*wedgeDim*(1-inw);
+      }
+      const x = SX(q.x), y = SY(q.y);
+      const puls = 0.78 + 0.22*Math.sin(t*q.pw+q.ph);
+      sprite(goldHalo, x,y, 9, 0.75*aWebF*f*puls);
+      dot(x,y, 1.5, '255,238,208', 0.95*aWebF*f*puls);
+      ctx.strokeStyle = `rgba(255,232,190,${0.4*aWebF*f*puls})`;
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(x-5,y); ctx.lineTo(x+5,y);
+      ctx.moveTo(x,y-5); ctx.lineTo(x,y+5);
+      ctx.stroke();
+    }
+  }
+
+  /* ---- survey wedge ---- */
+  if(aWedge>0.004){
+    const half = WEDGE_HALF + (Math.PI-WEDGE_HALF)*sstep(0,1,wWide);
+    const rOut = D_CMB*pxls;
+    const a0 = WEDGE_TH-half, a1 = WEDGE_TH+half;
+    // soft sector haze
+    ctx.save();
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,rOut,a0,a1); ctx.closePath();
+    const sg = ctx.createRadialGradient(cx,cy,0,cx,cy,rOut);
+    sg.addColorStop(0,'rgba(160,180,220,0.0)');
+    sg.addColorStop(0.5,`rgba(160,180,220,${0.085*aWedge*(1-0.6*wWide)})`);
+    sg.addColorStop(1,`rgba(160,180,220,${0.035*aWedge*(1-0.6*wWide)})`);
+    ctx.fillStyle=sg; ctx.fill();
+    ctx.restore();
+    // faint arcs at 5 and 10 billion light-years
+    ctx.strokeStyle = `rgba(233,231,220,${0.10*aWedge*(1-wWide)})`;
+    ctx.lineWidth = 1;
+    for(const gr of [5,10]){
+      ctx.beginPath(); ctx.arc(cx,cy, gr*GLY*pxls, a0,a1); ctx.stroke();
+    }
+    // wedge edges
+    const eA = 0.42*aWedge*(1-wWide);
+    if(eA>0.004){
+      ctx.strokeStyle = `rgba(233,231,220,${eA})`;
+      ctx.beginPath();
+      ctx.moveTo(cx,cy); ctx.lineTo(cx+Math.cos(a0)*rOut, cy+Math.sin(a0)*rOut);
+      ctx.moveTo(cx,cy); ctx.lineTo(cx+Math.cos(a1)*rOut, cy+Math.sin(a1)*rOut);
+      ctx.stroke();
+    }
+  }
+
+  /* ---- nearby cosmic web ---- */
+  if(aWebN>0.004){
+    for(const p of webNear.pts){
+      if(Math.hypot(p.x,p.y)*pxls > ST.h*1.6) continue;
+      let f = 1;
+      if(wedgeDim>0.01){
+        const inw = 1 - sstep(WEDGE_HALF-0.07, WEDGE_HALF+0.07, angDiff(p.th,WEDGE_TH));
+        f = 1 - 0.74*wedgeDim*(1-inw);
+      }
+      dot(SX(p.x),SY(p.y), p.s, p.col, p.a*aWebN*f);
+    }
+    for(const h2 of webNear.halos){
+      sprite(goldHalo, SX(h2.x),SY(h2.y), h2.R*pxls*2.0, 0.10*aWebN);
+    }
+  }
+
+  /* At Local Group scale, true-size galaxies are a few pixels; enlarge
+     the symbols gently during this scene only (positions stay honest). */
+  const emph = 1 + 1.2*trap(L, 13.35,13.6, 14.0,14.35);
+
+  /* ---- Local Group ---- */
+  if(aLG>0.004){
+    for(const gxy of LG){
+      const x = SX(Math.cos(gxy.th)*gxy.d), y = SY(Math.sin(gxy.th)*gxy.d);
+      const r = gxy.R*pxls*emph*(gxy.spr.S/2)/gxy.spr.R;
+      sprite(gxy.spr, x,y, r, gxy.a*aLG, gxy.rot, gxy.sq);
+      galaxyGlow(x,y, gxy.R*pxls*emph, gxy.a*aLG);
+    }
+    for(const b of LG_BLOBS){
+      const x = SX(Math.cos(b.th)*b.d), y = SY(Math.sin(b.th)*b.d);
+      sprite(softBlob, x,y, Math.max(b.R*pxls*emph*2.4, 2.2), b.a*aLG);
+    }
+    // micro-labels, only while the Local Group is the scene
+    const lblA = trap(L,13.5,13.62, 13.9,14.1) * master;
+    if(lblA>0.01){
+      ctx.font = Math.round(ST.h*0.0145)+'px ui-monospace, Menlo, Consolas, monospace';
+      try{ ctx.letterSpacing = '0.14em'; }catch(e){}
+      ctx.textAlign = 'center';
+      ctx.fillStyle = `rgba(152,160,198,${0.8*lblA})`;
+      ctx.fillText('MILKY WAY', SX(MW_X), SY(MW_Y) + MW_R*pxls*emph + ST.h*0.038);
+      const ax = SX(Math.cos(LG[0].th)*LG[0].d), ay = SY(Math.sin(LG[0].th)*LG[0].d);
+      ctx.fillText('ANDROMEDA', ax, ay + LG[0].R*pxls*emph + ST.h*0.038);
+      try{ ctx.letterSpacing = '0px'; }catch(e){}
+    }
+  }
+
+  /* ---- Milky Way ---- */
+  if(aMW>0.004){
+    const r = MW_R*pxls*emph*(mwSpr.S/2)/mwSpr.R;
+    sprite(mwSpr, SX(MW_X),SY(MW_Y), r, aMW, -0.2, 0.86);
+    galaxyGlow(SX(MW_X),SY(MW_Y), MW_R*pxls*emph, aMW);
+  }
+
+  /* ---- star shells (interstellar transit) ---- */
+  for(const sh of SHELLS){
+    const a = trap(L, ...sh.win) * master;
+    if(a<0.004) continue;
+    for(const s of sh.pts){
+      const x = SX(s.x), y = SY(s.y);
+      if(x<ST.x-4||x>ST.x+ST.w+4||y<ST.y-4||y>ST.y+ST.h+4) continue;
+      const tw = 1 + 0.1*Math.sin(t*s.tw+s.ph);
+      dot(x,y, s.s, s.col, s.a*a*tw);
+    }
+  }
+
+  /* ---- Solar System ---- */
+  if(aSS>0.004){
+    ctx.lineWidth = 1;
+    for(const p of PLANETS){
+      const alpha = (p.earthOrbit?0.22:0.13)*aSS;
+      ctx.strokeStyle = `rgba(157,180,224,${alpha})`;
+      ctx.beginPath(); ctx.arc(SX(SUN_X),SY(SUN_Y), p.r*pxls, 0,TAU); ctx.stroke();
+      if(!p.earthOrbit){
+        const x = SX(SUN_X+Math.cos(p.th)*p.r), y = SY(SUN_Y+Math.sin(p.th)*p.r);
+        dot(x,y, Math.min(p.s, Math.max(p.s*p.r*pxls/300,0.8)), p.col, 0.85*aSS);
+      }
+    }
+  }
+  if(aSun>0.004){
+    const x = SX(SUN_X), y = SY(SUN_Y);
+    const rc = Math.max(R_SUN*pxls, 1.1);
+    sprite(sunGlow, x,y, Math.max(rc*7, 10), 0.9*aSun);
+    dot(x,y, rc, '255,236,190', aSun);
+  }
+
+  /* ---- Moon ---- */
+  if(aMoon>0.004){
+    ctx.strokeStyle = `rgba(157,180,224,${0.18*aMoon})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx,cy, D_MOON*pxls, 0,TAU); ctx.stroke();
+    const mx = SX(Math.cos(0.7)*D_MOON), my = SY(Math.sin(0.7)*D_MOON);
+    dot(mx,my, Math.max(R_MOON*pxls,1.1), '201,207,221', 0.95*aMoon);
+  }
+
+  /* ---- Earth ---- */
+  if(aEarth>0.004){
+    const r = R_EARTH*pxls*(earthSpr.S/2)/earthSpr.R;
+    sprite(earthSpr, cx,cy, r, aEarth);
+  }
+
+  /* ---- the observer: Earth's location, carried through every scale ---- */
+  if(aObs>0.004){
+    const puls = 1 + 0.13*Math.sin(t*1.85);
+    sprite(obsHalo, cx,cy, 9*puls, 0.5*aObs);
+    dot(cx,cy, 1.6, '223,232,250', 0.95*aObs);
+  }
+
+  ctx.restore();
+  return {L, h, master};
+}
+
+/* ================================================================
+   HUD
+   ================================================================ */
+let lastHeadline='', lastDist='', lastTime='';
+function hud(t, L, h, master){
+  const shown = Math.min(h, D_CMB);          // the CMB is the farthest light we can see
+  const sec = shown;                          // light-seconds → seconds: same number
+
+  const head = sec < 1 ? 'Now' : fmtTime(sec)+' into the past';
+  if(head!==lastHeadline){ els.headline.textContent = head; lastHeadline=head; }
+
+  const dv = fmtDist(shown), tv = sec<1 ? 'arriving now' : fmtTime(sec);
+  if(dv!==lastDist){ els.mdist.textContent = dv; lastDist=dv; }
+  if(tv!==lastTime){ els.mtime.textContent = tv; lastTime=tv; }
+
+  const f = clamp((Math.log10(Math.max(sec,0.03))-BAR_L0)/(BAR_L1-BAR_L0),0,1);
+  els.fill.style.width = (f*100)+'%';
+
+  /* captions by loop time */
+  let cap='', capA=0;
+  const c1 = trap(t, 0.5,1.2, 3.6,4.7);
+  const cS = trap(t, 5.6,6.2, 7.2,7.9);
+  const c2 = trap(t, 22.5,23.4, 25.6,26.6);
+  const c3 = trap(t, 28.8,29.6, 31.4,32.1);
+  if(c1>0.01){ cap='Light arriving now'; capA=c1; }
+  else if(cS>0.01){ cap='The Sun you see is 8 minutes old'; capA=cS; }
+  else if(c2>0.01){ cap='Galaxy surveys map cosmic history'; capA=c2; }
+  else if(c3>0.01){ cap='The cosmic microwave background — the earliest light we can observe'; capA=c3; }
+  if(cap && els.caption.textContent!==cap) els.caption.textContent = cap;
+  els.caption.style.opacity = (capA*master).toFixed(3);
+
+  els.final.style.opacity = (trap(t, 29.8,31.1, 33.5,34) * master).toFixed(3);
+
+  els.headline.style.opacity = master.toFixed(3);
+  els.meter.style.opacity = master.toFixed(3);
+  els.foot.style.opacity = (0.55*master).toFixed(3);
+}
+
+/* ================================================================
+   Main loop:  ?t=SECONDS starts mid-cycle, ?pause=1 freezes there.
+   Click or Space toggles pause (handy while lecturing).
+   ================================================================ */
+const params = new URLSearchParams(location.search);
+let t0 = parseFloat(params.get('t')) || 0;
+let paused = params.get('pause')==='1';
+const HARD_PAUSE = paused;   // ?pause=1 is a frozen still (slides, QA) — clicks don't unfreeze
+if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches && !params.has('t')){
+  paused = true; t0 = 11.8;   // hold a representative frame until the user opts in
+}
+let tAccum = t0 % T_CYCLE, lastTs = null;
+
+function frame(ts){
+  if(lastTs===null) lastTs = ts;
+  const dt = Math.min((ts-lastTs)/1000, 0.1);
+  lastTs = ts;
+  if(!paused && !dragging) tAccum = (tAccum + dt) % T_CYCLE;
+  const {L,h,master} = draw(tAccum);
+  hud(tAccum, L, h, master);
+  els.hint.style.opacity = (paused && !HARD_PAUSE) ? 0.85 : 0;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* presenter controls: click pauses, horizontal drag scrubs the timeline,
+   arrow keys step — the loop itself only ever runs outward */
+function toggle(){ if(!HARD_PAUSE) paused = !paused; }
+function seek(dtSec){ tAccum = ((tAccum + dtSec) % T_CYCLE + T_CYCLE) % T_CYCLE; }
+let dragging = false, dragX = 0, dragMoved = 0;
+window.addEventListener('pointerdown', e=>{ dragging = true; dragX = e.clientX; dragMoved = 0; });
+window.addEventListener('pointermove', e=>{
+  if(!dragging) return;
+  const dx = e.clientX - dragX; dragX = e.clientX;
+  dragMoved += Math.abs(dx);
+  if(dragMoved > 5) seek(dx / Math.max(ST.w,1) * 8);   // full-width drag ≈ 8 s
+});
+window.addEventListener('pointerup', ()=>{
+  if(dragging && dragMoved <= 5) toggle();             // a plain click still pauses
+  dragging = false;
+});
+window.addEventListener('keydown', e=>{
+  if(e.code==='Space'){ e.preventDefault(); toggle(); }
+  else if(e.code==='ArrowRight'){ e.preventDefault(); seek(+1.2); }
+  else if(e.code==='ArrowLeft'){ e.preventDefault(); seek(-1.2); }
+});
+</script>
+</body>
+</html>
