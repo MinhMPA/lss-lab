@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anatomy of a light wave — the E field and the E&B wave</title>
+<style>
+  :root{
+    --surface-2:#FCFBF9; --border:rgba(30,27,22,0.10); --border-strong:rgba(30,27,22,0.24);
+    --text:#232019; --text-secondary:#57534C; --text-muted:#918B82;
+    --bg-accent:#EFE9E1; --text-accent:#7A2E12; --radius:8px;
+    --font-sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace; --page-bg:#F1ECE4;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --surface-2:#22201C; --border:rgba(255,255,255,0.12); --border-strong:rgba(255,255,255,0.26);
+      --text:#ECE7DE; --text-secondary:#B9B3A9; --text-muted:#807B72;
+      --bg-accent:#33302A; --text-accent:#E8A487; --page-bg:#161512;
+    }
+  }
+  *{box-sizing:border-box;} html,body{margin:0;padding:0;}
+  body{background:var(--page-bg);color:var(--text);font-family:var(--font-sans);-webkit-font-smoothing:antialiased;padding:28px 20px 36px;}
+  .wrap{max-width:880px;margin:0 auto;}
+  h1{font-size:23px;font-weight:600;margin:0 0 2px;}
+  .sub{font-size:15px;color:var(--text-secondary);margin:0 0 20px;}
+  button{font:inherit;font-size:14px;padding:7px 13px;cursor:pointer;border:0.5px solid var(--border-strong);border-radius:var(--radius);background:var(--surface-2);color:var(--text);}
+  button:hover{border-color:var(--text-muted);}
+  label{cursor:default;}
+  .ti{font-style:normal;line-height:1;display:inline-block;}
+  .ti-player-pause::before{content:"\23F8";} .ti-player-play::before{content:"\25B6";}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Anatomy of a light wave</h1>
+  <p class="sub">The electric field is a value &mdash; an arrow &mdash; at every point in space. Light is that field together with a magnetic one, at right angles, travelling on its own.</p>
+
+  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:0 0 1rem;">
+    <button id="em-play" aria-label="Pause animation" style="display:inline-flex;align-items:center;gap:6px;min-width:96px;justify-content:center;"><i class="ti ti-player-pause" aria-hidden="true" style="font-size:14px;"></i><span id="em-play-label">Pause</span></button>
+    <div style="display:inline-flex;border:0.5px solid var(--border-strong);border-radius:var(--radius);overflow:hidden;">
+      <button id="em-field" style="border:none;border-radius:0;background:var(--bg-accent);color:var(--text-accent);">E field</button>
+      <button id="em-wave" style="border:none;border-radius:0;border-left:0.5px solid var(--border-strong);background:transparent;">E + B wave</button>
+    </div>
+  </div>
+
+  <div style="background:var(--surface-2);border:0.5px solid var(--border);border-radius:12px;overflow:hidden;">
+    <canvas id="em-cv" style="display:block;width:100%;height:300px;"></canvas>
+  </div>
+</div>
+
+<script>
+(function(){
+  var state = { playing:true, view:"field", t:0, last:null };
+  var CORAL="#D85A30", TEAL="#1D9E75";
+  var K=0.0242, OM=1.745;
+  var cv=document.getElementById("em-cv"), ctx=cv.getContext("2d");
+
+  function themeColors(){
+    var cs=getComputedStyle(document.documentElement);
+    return { txt:(cs.getPropertyValue("--text-secondary").trim()||"#666"), mut:(cs.getPropertyValue("--text-muted").trim()||"#999") };
+  }
+  function sans(){ return "16px "+(getComputedStyle(document.documentElement).getPropertyValue("--font-sans")||"sans-serif"); }
+  function fit(){ var dpr=Math.min(2,window.devicePixelRatio||1), w=cv.clientWidth, h=cv.clientHeight; if(w<10) return false; cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr); ctx.setTransform(dpr,0,0,dpr,0,0); return true; }
+  function arrow(x1,y1,x2,y2,head){
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    var dx=x2-x1,dy=y2-y1,L=Math.hypot(dx,dy); if(L<head*1.6) return;
+    var a=Math.atan2(dy,dx); ctx.beginPath(); ctx.moveTo(x2,y2);
+    ctx.lineTo(x2-head*Math.cos(a-0.45),y2-head*Math.sin(a-0.45));
+    ctx.lineTo(x2-head*Math.cos(a+0.45),y2-head*Math.sin(a+0.45));
+    ctx.closePath(); ctx.fill();
+  }
+
+  function drawField(w,h,t){
+    var col=themeColors();
+    var gridDX=46, startX=28, Aarrow=18;
+    var nCols=Math.floor((w-2*startX)/gridDX)+1;
+    var gridDY=54, nRows=Math.max(3,Math.floor((h-60)/gridDY));
+    var startY=(h-(nRows-1)*gridDY)/2, yc=startY+Math.floor(nRows/2)*gridDY;
+
+    ctx.strokeStyle=CORAL; ctx.fillStyle=CORAL; ctx.lineWidth=1.4;
+    for (var c=0;c<nCols;c++){
+      var gx=startX+c*gridDX, E=Math.sin(K*gx-OM*t);
+      for (var r=0;r<nRows;r++){
+        var gy=startY+r*gridDY;
+        ctx.globalAlpha=0.32+0.5*Math.abs(E);
+        arrow(gx,gy,gx,gy-Aarrow*E,3.2);
+      }
+    }
+    ctx.globalAlpha=1;
+    // faint curve through central-row tips (the wave shape emerging from the field)
+    ctx.strokeStyle=CORAL; ctx.globalAlpha=0.28; ctx.lineWidth=1.4; ctx.beginPath();
+    for (var x=startX;x<=startX+(nCols-1)*gridDX;x+=3){ var Ec=Math.sin(K*x-OM*t); var yy=yc-Aarrow*Ec; if(x===startX) ctx.moveTo(x,yy); else ctx.lineTo(x,yy); }
+    ctx.stroke(); ctx.globalAlpha=1;
+
+    // test charge feeling the local field
+    var qx=startX+2.5*gridDX, Eq=Math.sin(K*qx-OM*t);
+    ctx.strokeStyle=CORAL; ctx.fillStyle=CORAL; ctx.lineWidth=2.4; arrow(qx,yc,qx,yc-28*Eq,4.6);
+    ctx.strokeStyle=col.txt; ctx.lineWidth=1.6; ctx.beginPath(); ctx.arc(qx,yc,9,0,6.2832); ctx.stroke();
+    ctx.fillStyle=col.txt; ctx.font=sans(); ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText("+",qx,yc+0.5); ctx.textBaseline="alphabetic";
+    ctx.fillStyle=col.mut; ctx.fillText("a charge feels the field here", qx, yc+24);
+  }
+
+  function drawEB(w,h,t){
+    var col=themeColors(), midY=h/2, Amp=Math.min(60,h*0.26);
+    ctx.strokeStyle=col.mut; ctx.fillStyle=col.mut; ctx.lineWidth=1; ctx.globalAlpha=0.6; arrow(16,midY,w-16,midY,5); ctx.globalAlpha=1;
+
+    // B (into/out of page, drawn in perspective), in phase, behind E
+    var bx=0.5, by=0.30, Bamp=Amp*0.9;
+    ctx.strokeStyle=TEAL; ctx.fillStyle=TEAL; ctx.lineWidth=1.1; ctx.globalAlpha=0.7;
+    for (var xa=42;xa<w-20;xa+=44){ var Ba=Bamp*Math.sin(K*xa-OM*t); arrow(xa,midY,xa+bx*Ba,midY+by*Ba,3.5); }
+    ctx.globalAlpha=0.75; ctx.setLineDash([4,4]); ctx.lineWidth=1.4; ctx.beginPath();
+    for (var xb=16;xb<=w-16;xb+=3){ var Bb=Bamp*Math.sin(K*xb-OM*t); var px=xb+bx*Bb, py=midY+by*Bb; if(xb===16) ctx.moveTo(px,py); else ctx.lineTo(px,py); }
+    ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha=1;
+
+    // E (vertical, in the plane of the screen), in front
+    ctx.strokeStyle=CORAL; ctx.fillStyle=CORAL; ctx.lineWidth=1.1; ctx.globalAlpha=0.85;
+    for (var xe=28;xe<w-20;xe+=22){ var Ee=Amp*Math.sin(K*xe-OM*t); arrow(xe,midY,xe,midY-Ee,3.5); }
+    ctx.globalAlpha=1; ctx.lineWidth=2; ctx.beginPath();
+    for (var x=16;x<=w-16;x+=3){ var E=Amp*Math.sin(K*x-OM*t); if(x===16) ctx.moveTo(x,midY-E); else ctx.lineTo(x,midY-E); }
+    ctx.stroke();
+
+    // labels (E, B, propagation) — doubled size (32px)
+    var big="32px "+(getComputedStyle(document.documentElement).getPropertyValue("--font-sans")||"sans-serif");
+    ctx.font=big; ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+    ctx.strokeStyle=CORAL; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(w-118,30); ctx.lineTo(w-100,30); ctx.stroke();
+    ctx.fillStyle=CORAL; ctx.fillText("E",w-92,40);
+    ctx.strokeStyle=TEAL; ctx.setLineDash([5,4]); ctx.lineWidth=2.4; ctx.beginPath(); ctx.moveTo(w-64,30); ctx.lineTo(w-46,30); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle=TEAL; ctx.fillText("B",w-38,40);
+    ctx.fillStyle=col.mut; ctx.textAlign="right"; ctx.fillText("propagation direction \u2192", w-16, h-16);
+  }
+
+  function draw(){
+    var w=cv.clientWidth, h=cv.clientHeight;
+    ctx.clearRect(0,0,w,h);
+    if (state.view==="field") drawField(w,h,state.t); else drawEB(w,h,state.t);
+  }
+  function step(ts){
+    if (state.last==null) state.last=ts;
+    var dt=Math.min(0.05,(ts-state.last)/1000); state.last=ts;
+    if (state.playing) state.t+=dt;
+    draw(); requestAnimationFrame(step);
+  }
+
+  var playBtn=document.getElementById("em-play"), playLbl=document.getElementById("em-play-label");
+  playBtn.addEventListener("click",function(){
+    state.playing=!state.playing; playLbl.textContent=state.playing?"Pause":"Play";
+    playBtn.setAttribute("aria-label",state.playing?"Pause animation":"Play animation");
+    playBtn.querySelector("i").className=state.playing?"ti ti-player-pause":"ti ti-player-play";
+  });
+  var fieldBtn=document.getElementById("em-field"), waveBtn=document.getElementById("em-wave");
+  function setView(v){
+    state.view=v;
+    fieldBtn.style.background=v==="field"?"var(--bg-accent)":"transparent"; fieldBtn.style.color=v==="field"?"var(--text-accent)":"";
+    waveBtn.style.background=v==="wave"?"var(--bg-accent)":"transparent"; waveBtn.style.color=v==="wave"?"var(--text-accent)":"";
+  }
+  fieldBtn.addEventListener("click",function(){setView("field");});
+  waveBtn.addEventListener("click",function(){setView("wave");});
+
+  if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches){ state.playing=false; playLbl.textContent="Play"; playBtn.querySelector("i").className="ti ti-player-play"; }
+  var ro=new ResizeObserver(function(){ fit(); }); ro.observe(cv);
+  fit(); requestAnimationFrame(step);
+})();
+</script>
+</body>
+</html>
