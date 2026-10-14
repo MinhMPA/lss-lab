@@ -23,6 +23,10 @@ The two are separated by symmetry. Both grow as 1/[k²T(k)] on the largest scale
   - drag to pan, scroll to zoom, *New universe* to re-seed.
 
   *Resume* returns to the narrative.
+- **Shapes** and **Sizes** switches (top right; keys **S** and **Z**) show one
+  observable at a time, during the loop or while exploring. With shapes off the
+  galaxies are round discs; with sizes off they are uniform and untinted. The
+  plot, legend and sliders of the switched-off observable dim with it.
 - **← / →** scrub by one second; drag the timeline to seek.
 - **N** toggles between plain captions and research **notation**: equations,
   k in h/Mpc, bias symbols. **F** toggles fullscreen.
@@ -35,8 +39,10 @@ The two are separated by symmetry. Both grow as 1/[k²T(k)] on the largest scale
   | `&notation=1` | start in notation mode |
   | `&explore=1` | open paused in explore mode |
   | `&seed=N` | a different realization |
+  | `&shapes=0`, `&sizes=0` | start with that observable switched off |
 
-  Example: `index.html?t=19.5&pause=1&notation=1`.
+  Examples: `index.html?t=19.5&pause=1&notation=1`; a sizes-only still of the
+  local-imprint beat: `index.html?t=34&pause=1&shapes=0`.
 
 ## Scenes
 

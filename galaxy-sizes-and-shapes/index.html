@@ -54,10 +54,17 @@
 
   #kicker{left:1090px;top:58px;width:770px;display:flex;justify-content:space-between;
     align-items:center;font-size:15px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim)}
-  #mode{pointer-events:auto;display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
-  #mode button{font:500 14px var(--sans);letter-spacing:.08em;color:var(--dim);background:transparent;
+  #switches{display:flex;gap:10px}
+  #mode,#obs{pointer-events:auto;display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  #mode button,#obs button{font:500 14px var(--sans);letter-spacing:.08em;color:var(--dim);background:transparent;
     border:0;padding:7px 13px;cursor:pointer}
   #mode button.on{color:var(--bg);background:var(--ink)}
+  /* observable switches: a filled dot and the observable's colour when on */
+  #obs button{color:var(--faint)} #obs button::before{content:'○ '}
+  #obs button.on::before{content:'● '}
+  #obs button.on.cya{color:var(--cyan)} #obs button.on.amb{color:var(--amber)}
+  body.no-shapes #legend div:nth-child(2), body.no-sizes #legend div:nth-child(1){opacity:.35}
+  body.no-shapes .xrow.cya, body.no-sizes .xrow.amb{opacity:.4}
 
   #caption{left:1090px;top:112px;width:770px}
   #step{font:500 15px var(--mono);letter-spacing:.14em;color:var(--faint)}
@@ -113,9 +120,15 @@
 <div id="ui">
   <div id="loading">building the universe…</div>
   <div id="kicker"><span>Galaxy sizes &amp; shapes</span>
-    <span id="mode" role="group" aria-label="Caption style">
-      <button id="m-plain" class="on" aria-pressed="true">Plain</button>
-      <button id="m-math" aria-pressed="false">Notation</button>
+    <span id="switches">
+      <span id="obs" role="group" aria-label="Observables shown">
+        <button id="o-shapes" class="on cya" aria-pressed="true">Shapes</button>
+        <button id="o-sizes" class="on amb" aria-pressed="true">Sizes</button>
+      </span>
+      <span id="mode" role="group" aria-label="Caption style">
+        <button id="m-plain" class="on" aria-pressed="true">Plain</button>
+        <button id="m-math" aria-pressed="false">Notation</button>
+      </span>
     </span>
   </div>
   <div id="caption" aria-live="polite">
@@ -139,7 +152,7 @@
       <button id="b-reset">Reset view</button>
     </div>
   </div>
-  <div id="hint"><span id="keys">space pause · ← → scrub · N notation · F fullscreen</span><span id="status"></span></div>
+  <div id="hint"><span id="keys">space pause · ← → scrub · S shapes · Z sizes · N notation · F fullscreen</span><span id="status"></span></div>
   <div id="timeline" role="slider" aria-label="Animation time in seconds" aria-valuemin="0" aria-valuemax="56" tabindex="0"><div id="track"><div id="fill"></div></div></div>
   <div id="note"></div>
 </div>
@@ -611,13 +624,13 @@ function drawGalaxies(s, C){
     if(u < C.u0-pad || u > C.u1+pad || v < C.v0-pad || v > C.v1+pad) continue;
     const a = G.lum[i]*lodAlpha(G.rank[i], f); if(a < 0.05) continue;
     /* spin-2: ellipticity (major axis along the stretching direction for positive amplitudes) */
-    let e1 = G.e1[i] - P.aK*G.k1[i] - P.aQ*G.q1[i];
-    let e2 = G.e2[i] - P.aK*G.k2[i] - P.aQ*G.q2[i];
+    let e1 = UI.shapes ? G.e1[i] - P.aK*G.k1[i] - P.aQ*G.q1[i] : 0;
+    let e2 = UI.shapes ? G.e2[i] - P.aK*G.k2[i] - P.aQ*G.q2[i] : 0;
     let e = Math.hypot(e1,e2);
     const ec = 0.78*Math.tanh(e/0.78);                    // soft cap: no needles
     if(e > 1e-6){ e1 *= ec/e; e2 *= ec/e; } e = ec;
     /* spin-0: log size; area-preserving axes a*b = R^2 */
-    const lnR = G.s[i] + P.aS*G.d[i] + P.aP*G.p[i], R = r0*Math.exp(lnR);
+    const lnR = UI.sizes ? G.s[i] + P.aS*G.d[i] + P.aP*G.p[i] : 0, R = r0*Math.exp(lnR);
     const ax = R*Math.sqrt((1+e)/(1-e)), by = R*Math.sqrt((1-e)/(1+e)), th = 0.5*Math.atan2(e2, e1);
     const X = C.X(u), Y = C.Y(v);
     const ci = Math.round(clamp(lnR/0.3, -1, 1)*(NC-1)/2 + (NC-1)/2), bi = Math.min(NB-1, Math.floor(a*NB));
@@ -695,8 +708,8 @@ function curvesFor(P, s){
   const b1R = BIAS.b1R*s.size;
   return P.key === 'spin0'
     ? [{f: k => biasK(k, BIAS.b1, BIAS.bphi, s.fnl), col:[233,231,220], lw:2, dash:[7,6], lab:['counts','b_g(k)']},
-       {f: k => biasK(k, b1R, BIAS.bphiR, s.fnl),  col:AMBER, lw:3, dash:[], lab:['sizes','b_R(k)']}]
-    : [{f: k => biasK(k, 1, BIAS.psiOverK, s.fnl2), col:CYAN, lw:3, dash:[], lab:['shapes','b_K(k) / b_K']}];
+       {f: k => biasK(k, b1R, BIAS.bphiR, s.fnl),  col:AMBER, lw:3, dash:[], lab:['sizes','b_R(k)'], off:!UI.sizes}]
+    : [{f: k => biasK(k, 1, BIAS.psiOverK, s.fnl2), col:CYAN, lw:3, dash:[], lab:['shapes','b_K(k) / b_K'], off:!UI.shapes}];
 }
 function drawPlot(s){
   RP.y = UI.exploring ? 268 : 496;
@@ -731,6 +744,7 @@ function drawPlot(s){
     ctx.save(); ctx.beginPath(); ctx.rect(RP.x, y - 2, RP.w, P.h + 2); ctx.clip();
     const labs = [];
     for(const c of curvesFor(P, s)){
+      if(c.off){ labs.push([c, py(P.ref)]); continue; }
       ctx.strokeStyle = rgba(c.col, 0.95); ctx.lineWidth = c.lw; ctx.setLineDash(c.dash); ctx.beginPath();
       for(let i=0;i<=160;i++){ const lk = LK0 + (LK1-LK0)*i/160, v = py(c.f(Math.pow(10, lk)));
         i ? ctx.lineTo(pk(lk), v) : ctx.moveTo(pk(lk), v); }
@@ -739,7 +753,8 @@ function drawPlot(s){
     }
     ctx.restore();
     ctx.font = '600 16px ' + SANS; ctx.textAlign = 'right';
-    for(const [c, v] of labs){ ctx.fillStyle = rgba(c.col, 1); ctx.fillText(c.lab[UI.notation ? 1 : 0], RP.x + RP.w, clamp(v - 8, y + 30, y + P.h - 6)); }
+    for(const [c, v] of labs){ ctx.fillStyle = rgba(c.col, c.off ? 0.45 : 1);
+      ctx.fillText(c.lab[UI.notation ? 1 : 0] + (c.off ? ' (off)' : ''), RP.x + RP.w, clamp(v - 8, y + 30, y + P.h - 6)); }
     y += P.h + PGAP;
   }
   /* shared k axis */
@@ -805,7 +820,15 @@ const NOTE = {
 };
 
 const $ = id => document.getElementById(id);
-const UI = {notation:false, scene:-1, exploring:false, busy:false, builtAt:0};
+const UI = {notation:false, shapes:true, sizes:true, scene:-1, exploring:false, busy:false, builtAt:0};
+/* observable switches: usable during the loop and in explore mode */
+function setObservable(key, on){
+  UI[key] = on;
+  const b = $(key === 'shapes' ? 'o-shapes' : 'o-sizes');
+  b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
+  document.body.classList.toggle('no-' + key, !on);
+  lastSig = '';
+}
 function setNotation(on){
   UI.notation = on;
   document.body.classList.toggle('notation', on);
@@ -887,7 +910,7 @@ function frame(ts){
   const s = EX || stateAt(clock.t);
 
   /* while paused, redraw only when something visible changed */
-  const sig = clock.paused ? JSON.stringify(s) + UI.notation + UI.exploring + U.seed : '';
+  const sig = clock.paused ? JSON.stringify(s) + UI.notation + UI.shapes + UI.sizes + UI.exploring + U.seed : '';
   if(!sig || sig !== lastSig){
     ctx.setTransform(1,0,0,1,0,0);
     ctx.fillStyle = '#05070d'; ctx.fillRect(0,0,cv.width,cv.height);
@@ -957,6 +980,8 @@ addEventListener('keydown', e => {
   else if(e.code === 'ArrowRight'){ e.preventDefault(); seek(clock.t + 1); }
   else if(e.code === 'ArrowLeft'){ e.preventDefault(); seek(clock.t - 1); }
   else if(e.code === 'KeyN') setNotation(!UI.notation);
+  else if(e.code === 'KeyS') setObservable('shapes', !UI.shapes);
+  else if(e.code === 'KeyZ') setObservable('sizes', !UI.sizes);
   else if(e.code === 'KeyF'){ document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.(); }
 });
 $('m-plain').addEventListener('click', () => setNotation(false));
@@ -976,6 +1001,10 @@ $('b-seed').addEventListener('click', e => {
 
 /* boot: build after first paint so the loading line shows */
 setNotation(params.get('notation') === '1');
+$('o-shapes').addEventListener('click', () => setObservable('shapes', !UI.shapes));
+$('o-sizes').addEventListener('click', () => setObservable('sizes', !UI.sizes));
+if(params.get('shapes') === '0') setObservable('shapes', false);
+if(params.get('sizes') === '0') setObservable('sizes', false);
 requestAnimationFrame(() => setTimeout(() => {
   const seed = parseInt(params.get('seed'), 10);
   U = buildUniverse(Number.isFinite(seed) ? seed : 20261014);
