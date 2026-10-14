@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Galaxy Sizes &amp; Shapes</title>
+<!--
+  Galaxy sizes & shapes: tracing the tide, probing inflation.
+  A looping lecture animation with an explore mode. Single file, no dependencies.
+
+  Model (2D slice, L = 2000 Mpc/h, 512^2 grid, Planck 2018 cosmology):
+    - Primordial potential phi with P_phi(k) ∝ k^(ns-3): the scale-invariant spectrum of a
+      thin slice through a 3D field. phi is positive in wells (sign of +3/5 zeta).
+    - Linear density delta(k) = alpha(k) phi(k), alpha(k) = 2 k^2 T(k) D(z) / (3 Omega_m H0^2)
+      (c = 1, D = a in matter domination; EH98 transfer, Carroll+92 growth).
+    - Truncated Zel'dovich displacement -> particles -> Eulerian density.
+    - Tidal field from the smoothed Eulerian density (field-level NLA, so galaxies and
+      streamlines agree where galaxies actually sit). Only the in-plane trace-free
+      components are drawn, so the trace convention (1/2 vs 1/3) drops out:
+        K+ = (k_x^2 - k_y^2)/(2k^2) delta_s,  Kx = k_x k_y / k^2 delta_s,
+      and likewise psi from the long-wavelength phi (smoothed at R_PHI, k << k_galaxy).
+    - Galaxies (positions frozen): ellipticity e = e_rand - A_K K~ - A_psi (fNL2/F_S2) psi~,
+      log size  ln R = ln R0 + s_rand + A_s delta~ - A_phi (fNL/F_LOC) phi~   (b_phi^R < 0),
+      where ~ marks fields normalised to unit rms. Major axes follow the stretching
+      direction (b_K < 0): along filaments, radial around clusters on average.
+    - Response plot: b(k) = b + b_phi f / alpha(k) with illustrative biases (BIAS below):
+      counts b1 = 2, b_phi = 2 delta_c (b1 - 1); sizes small b1^R, b_phi^R < 0
+      (Nguyen, Akitsu & Taruya 2026); shapes b_K(k)/b_K = 1 + (b_psi/b_K) f_s2 / alpha.
+
+  Colour code (the page's one rule): amber = spin-0 (sizes, density, phi, local f_NL);
+  cyan = spin-2 (shapes, tidal field, psi, spin-2 f_NL). The map exaggerates; the plot does not.
+-->
+<style>
+  :root{
+    --bg:#05070d; --panel:#080b14; --line:#1d2742;
+    --ink:#e9e7dc; --dim:#8b93a7; --faint:#5b6378;
+    --amber:#ffb454; --cyan:#7fd8e8;
+    --sans:"Inter","Segoe UI","Helvetica Neue",Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);overflow:hidden}
+  body{-webkit-font-smoothing:antialiased;color:var(--ink);font-family:var(--sans)}
+  #cv{position:fixed;inset:0;width:100%;height:100%;display:block}
+
+  /* The HUD is laid out in a fixed 1920x1080 design space and scaled to the
+     letterboxed stage from JS, so canvas and HTML share one coordinate system. */
+  #ui{position:fixed;left:0;top:0;width:1920px;height:1080px;transform-origin:0 0;
+    pointer-events:none}
+  #ui > *{position:absolute}
+  .amb{color:var(--amber)} .cya{color:var(--cyan)}
+
+  #kicker{left:1090px;top:58px;width:770px;display:flex;justify-content:space-between;
+    align-items:center;font-size:15px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim)}
+  #mode{pointer-events:auto;display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  #mode button{font:500 14px var(--sans);letter-spacing:.08em;color:var(--dim);background:transparent;
+    border:0;padding:7px 13px;cursor:pointer}
+  #mode button.on{color:var(--bg);background:var(--ink)}
+
+  #caption{left:1090px;top:112px;width:770px;transition:opacity .25s}
+  #step{font:500 15px var(--mono);letter-spacing:.14em;color:var(--faint)}
+  #title{font:600 40px/1.15 var(--serif);margin:8px 0 14px;letter-spacing:.005em}
+  #body{font-size:23px;line-height:1.48;color:#cfd2dc;margin:0}
+  #math{margin-top:14px;font:19px/1.5 var(--serif);color:#d9dce6;padding-left:14px;
+    border-left:2px solid var(--line);display:none}
+  body.notation #math{display:block}
+  #math i{font-style:italic}
+
+  #plothead{left:1090px;top:440px;width:770px;font-size:15px;letter-spacing:.2em;
+    text-transform:uppercase;color:var(--dim);transition:opacity .3s}
+
+  #legend{left:1090px;top:800px;width:770px;font-size:19px;line-height:1.5;color:#c3c7d2;transition:top .6s}
+  body.noplot #legend{top:452px}
+  #legend div{display:flex;gap:14px;align-items:baseline;margin-bottom:8px}
+  #legend b{font-weight:600;min-width:120px}
+
+  #explore{left:1090px;top:572px;width:770px;pointer-events:auto;display:none;
+    font-size:18px;color:#c3c7d2}
+  body.exploring #explore{display:block}
+  body.exploring #legend, body.exploring #body, body.exploring #math{display:none}
+  body.exploring #plothead{top:226px}
+  .xrow{display:grid;grid-template-columns:370px 1fr 70px;gap:14px;align-items:center;height:40px}
+  .xrow output{font:16px var(--mono);text-align:right;color:var(--ink)}
+  .xrow input{width:100%;accent-color:var(--cyan)}
+  .xrow.amb input{accent-color:var(--amber)}
+  .chips,.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  .chips button,.btns button{font:500 15px var(--sans);color:var(--dim);background:transparent;
+    border:1px solid var(--line);border-radius:7px;padding:6px 11px;cursor:pointer}
+  .chips button.on{color:var(--ink);border-color:#56617f;background:#121829}
+  .btns button:hover,.chips button:hover{color:var(--ink)}
+  .btns .primary{color:var(--bg);background:var(--ink);border-color:var(--ink)}
+  button:focus-visible,input:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+
+  #timeline{left:1090px;top:1004px;width:770px;height:22px;pointer-events:auto;cursor:pointer}
+  #track{position:absolute;left:0;right:0;top:9px;height:3px;background:var(--line);border-radius:2px}
+  #fill{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--dim);border-radius:2px}
+  .tick{position:absolute;top:5px;width:2px;height:11px;background:var(--faint);border-radius:1px}
+  #hint{left:1090px;top:976px;width:770px;font:14px var(--mono);letter-spacing:.06em;color:var(--faint);
+    display:flex;justify-content:space-between}
+  #status{color:var(--dim)}
+
+  #note{left:76px;top:986px;width:930px;font:14px var(--mono);color:var(--faint);letter-spacing:.03em}
+  #loading{left:0;top:0;width:1920px;height:1080px;display:flex;align-items:center;justify-content:center;
+    font:16px var(--mono);letter-spacing:.2em;color:var(--dim);text-transform:uppercase}
+</style>
+</head>
+<body>
+<canvas id="cv" role="img" aria-label="A two-dimensional slice of the cosmic web with galaxies drawn as ellipses whose sizes and orientations respond to the density, the tidal field and primordial non-Gaussianity"></canvas>
+<div id="ui">
+  <div id="loading">building the universe…</div>
+  <div id="kicker"><span>Galaxy sizes &amp; shapes</span>
+    <span id="mode" role="group" aria-label="Caption style">
+      <button id="m-plain" class="on" aria-pressed="true">Plain</button>
+      <button id="m-math" aria-pressed="false">Notation</button>
+    </span>
+  </div>
+  <div id="caption" aria-live="polite">
+    <div id="step"></div>
+    <h1 id="title"></h1>
+    <p id="body"></p>
+    <div id="math"></div>
+  </div>
+  <div id="plothead"></div>
+  <div id="legend"></div>
+  <div id="explore" role="group" aria-label="Explore controls">
+    <div class="xrow amb"><label for="x-fnl" data-k="fnl"></label><input id="x-fnl" type="range" min="-50" max="50" step="1"><output id="o-fnl"></output></div>
+    <div class="xrow"><label for="x-fnl2" data-k="fnl2"></label><input id="x-fnl2" type="range" min="-300" max="300" step="5"><output id="o-fnl2"></output></div>
+    <div class="xrow"><label for="x-shape" data-k="shape"></label><input id="x-shape" type="range" min="0" max="1.5" step="0.01"><output id="o-shape"></output></div>
+    <div class="xrow amb"><label for="x-size" data-k="size"></label><input id="x-size" type="range" min="-1.5" max="1.5" step="0.01"><output id="o-size"></output></div>
+    <div class="xrow"><label for="x-zoom" data-k="zoom"></label><input id="x-zoom" type="range" min="1" max="5" step="0.01"><output id="o-zoom"></output></div>
+    <div class="chips" id="chips"></div>
+    <div class="btns">
+      <button id="b-resume" class="primary">Resume ▶</button>
+      <button id="b-seed">New universe</button>
+      <button id="b-reset">Reset view</button>
+    </div>
+  </div>
+  <div id="hint"><span id="keys">space pause · ← → scrub · N notation · F fullscreen</span><span id="status"></span></div>
+  <div id="timeline" role="slider" aria-label="Animation time in seconds" aria-valuemin="0" aria-valuemax="56" tabindex="0"><div id="track"><div id="fill"></div></div></div>
+  <div id="note"></div>
+</div>
+<script>
+'use strict';
+/* =====================================================================
+   1. Design space, palette, cosmology
+   ===================================================================== */
+const W = 1920, H = 1080;
+const SP = {x:60, y:60, s:900};              // slice panel (design px)
+const RP = {x:1110, y:496, w:730};           // response-vs-scale plot (moves up while exploring)
+const TAU = 2*Math.PI;
+
+const AMBER = [255,180,84], CYAN = [127,216,232], GAL = [255,238,220];
+const rgba = (c,a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+const mixRGB = (A,B,t) => A.map((v,i) => Math.round(v + (B[i]-v)*t));
+
+const COSMO = {h:0.674, Om:0.315, fb:0.157, ns:0.965, Tcmb:2.7255};   // Planck 2018
+const L_BOX = 2000;                          // Mpc/h
+const N = 512;                               // field grid
+const M_IMG = 1536;                          // density image (3 sub-particles per cell and axis)
+const R_T = 5.5, R_S = 9, R_PHI = 40;        // Zel'dovich truncation / response smoothing / long-mode phi (Mpc/h)
+const SIGMA_ZEL = 0.95;                      // rms of the truncated linear density fed to Zel'dovich
+const Z_MAX = 4;                             // narrative zoom
+const N_GAL = 12000, N_TIDE = 24000;         // stored galaxies / tidal streamlines (LOD-subsampled on screen)
+
+/* map display gains (dimensionless, deliberately exaggerated; see README) */
+const GAIN = {e_rand:0.17, K:0.36, psi:0.42, s_rand:0.11, s:0.08, phi:0.30};
+const F_LOC = 25, F_S2 = 100;                // narrative f_NL (local, spin-2); also the map reference amplitudes
+const R0 = 4.6;                              // base galaxy radius, design px
+/* illustrative large-scale biases for the response plot */
+const DELTA_C = 1.686;
+const BIAS = {b1:2, bphi:2*DELTA_C*(2-1), b1R:0.3, bphiR:-3, psiOverK:1};
+
+/* =====================================================================
+   2. Small utilities
+   ===================================================================== */
+const clamp = (x,a,b) => Math.min(b, Math.max(a,x));
+const c01 = x => clamp(x,0,1);
+const lerp = (a,b,t) => a + (b-a)*t;
+const eio = x => { x = c01(x); return x*x*(3-2*x); };
+function mulberry32(s){ return function(){ s|=0; s=s+0x6D2B79F5|0;
+  let t=Math.imul(s^s>>>15,1|s); t=t+Math.imul(t^t>>>7,61|t)^t;
+  return ((t^t>>>14)>>>0)/4294967296; }; }
+function gauss(r){ return Math.sqrt(-2*Math.log(Math.max(r(),1e-12)))*Math.cos(TAU*r()); }
+function makeCanvas(w,h){ const c=document.createElement('canvas'); c.width=w; c.height=h; return c; }
+
+/* radix-2 complex FFT on n x n row-major Float64 arrays, twiddles cached */
+function makeFFT2(n){
+  const lg = Math.log2(n), rev = new Uint32Array(n), cs = new Float64Array(n/2), sn = new Float64Array(n/2);
+  for(let i=0;i<n;i++){ let r=0; for(let b=0;b<lg;b++) r |= ((i>>b)&1) << (lg-1-b); rev[i]=r; }
+  for(let i=0;i<n/2;i++){ cs[i]=Math.cos(TAU*i/n); sn[i]=Math.sin(TAU*i/n); }
+  const tr = new Float64Array(n), ti = new Float64Array(n);
+  function fft1(re,im,sgn){
+    for(let i=0;i<n;i++){ const j=rev[i]; if(i<j){ let t=re[i]; re[i]=re[j]; re[j]=t; t=im[i]; im[i]=im[j]; im[j]=t; } }
+    for(let len=2;len<=n;len<<=1){
+      const h=len>>1, st=n/len;
+      for(let i=0;i<n;i+=len) for(let j=0,k=0;j<h;j++,k+=st){
+        const wr=cs[k], wi=sgn*sn[k], a=i+j, b=a+h;
+        const vr=re[b]*wr-im[b]*wi, vi=re[b]*wi+im[b]*wr;
+        re[b]=re[a]-vr; im[b]=im[a]-vi; re[a]+=vr; im[a]+=vi;
+      }
+    }
+  }
+  return function(re,im,inv){
+    const sgn = inv ? 1 : -1;
+    for(let y=0;y<n;y++){ const o=y*n;
+      for(let x=0;x<n;x++){ tr[x]=re[o+x]; ti[x]=im[o+x]; }
+      fft1(tr,ti,sgn);
+      for(let x=0;x<n;x++){ re[o+x]=tr[x]; im[o+x]=ti[x]; } }
+    for(let x=0;x<n;x++){
+      for(let y=0;y<n;y++){ tr[y]=re[y*n+x]; ti[y]=im[y*n+x]; }
+      fft1(tr,ti,sgn);
+      for(let y=0;y<n;y++){ re[y*n+x]=tr[y]; im[y*n+x]=ti[y]; } }
+    if(inv){ const s=1/(n*n); for(let i=0;i<n*n;i++){ re[i]*=s; im[i]*=s; } }
+  };
+}
+const fft2 = makeFFT2(N);
+
+/* bilinear sample of a periodic N x N node-centred grid at box coords (u,v) in [0,1) */
+function sample(F, u, v){
+  const x = u*N, y = v*N, x0 = Math.floor(x), y0 = Math.floor(y), fx = x-x0, fy = y-y0;
+  const i0 = ((x0%N)+N)%N, j0 = ((y0%N)+N)%N, i1 = (i0+1)%N, j1 = (j0+1)%N;
+  return (F[j0*N+i0]*(1-fx) + F[j0*N+i1]*fx)*(1-fy) + (F[j1*N+i0]*(1-fx) + F[j1*N+i1]*fx)*fy;
+}
+const wrap = u => u - Math.floor(u);
+
+/* =====================================================================
+   3. Physics: transfer function, alpha(k), the fields of one universe
+   ===================================================================== */
+/* Eisenstein & Hu (1998) fitting formula with baryon wiggles, k in h/Mpc */
+function ehTransfer(k){
+  const h=COSMO.h, omhh=COSMO.Om*h*h, obhh=omhh*COSMO.fb;
+  const th=COSMO.Tcmb/2.7, th2=th*th, th4=th2*th2, fb=COSMO.fb, fc=1-fb;
+  const zeq=2.5e4*omhh/th4;
+  const b1=0.313*Math.pow(omhh,-0.419)*(1+0.607*Math.pow(omhh,0.674)), b2=0.238*Math.pow(omhh,0.223);
+  const zd=1291*Math.pow(omhh,0.251)/(1+0.659*Math.pow(omhh,0.828))*(1+b1*Math.pow(obhh,b2));
+  const Rd=31.5*obhh/th4*(1000/zd), Req=31.5*obhh/th4*(1000/zeq), keq=0.0746*omhh/th2;
+  const s=(2/(3*keq))*Math.sqrt(6/Req)*Math.log((Math.sqrt(1+Rd)+Math.sqrt(Rd+Req))/(1+Math.sqrt(Req)));
+  const ksilk=1.6*Math.pow(obhh,0.52)*Math.pow(omhh,0.73)*(1+Math.pow(10.4*omhh,-0.95));
+  const a1=Math.pow(46.9*omhh,0.670)*(1+Math.pow(32.1*omhh,-0.532)), a2=Math.pow(12.0*omhh,0.424)*(1+Math.pow(45.0*omhh,-0.582));
+  const ac=Math.pow(a1,-fb)*Math.pow(a2,-fb*fb*fb);
+  const bb1=0.944/(1+Math.pow(458*omhh,-0.708)), bb2=Math.pow(0.395*omhh,-0.0266), bc=1/(1+bb1*(Math.pow(fc,bb2)-1));
+  const kM=k*h, ks=kM*s;
+  const T0=(kk,al,be)=>{ const q=kk/(13.41*keq), C=14.2/al+386/(1+69.9*Math.pow(q,1.08)), Lg=Math.log(Math.E+1.8*be*q); return Lg/(Lg+C*q*q); };
+  const f=1/(1+Math.pow(ks/5.4,4)), Tc=f*T0(kM,1,bc)+(1-f)*T0(kM,ac,bc);
+  const y=zeq/zd, Gy=y*(-6*Math.sqrt(1+y)+(2+3*y)*Math.log((Math.sqrt(1+y)+1)/(Math.sqrt(1+y)-1)));
+  const ab=2.07*keq*s*Gy*Math.pow(1+Rd,-0.75), bnode=8.41*Math.pow(omhh,0.435);
+  const bb=0.5+fb+(3-2*fb)*Math.sqrt(17.2*omhh*17.2*omhh+1), st=s/Math.cbrt(1+Math.pow(bnode/ks,3));
+  const t1=T0(kM,1,1)/(1+Math.pow(ks/5.2,2)), t2=ab/(1+Math.pow(bb/ks,3))*Math.exp(-Math.pow(kM/ksilk,1.4));
+  const kst=kM*st, j0=kst>0.01 ? Math.sin(kst)/kst : 1-kst*kst/6;
+  return fb*(t1+t2)*j0 + fc*Tc;
+}
+/* flat LCDM growth at z = 0, normalised to D = a in matter domination (Carroll et al. 1992) */
+const D0 = (() => { const Om=COSMO.Om, OL=1-Om;
+  return 2.5*Om/(Math.pow(Om,4/7) - OL + (1+Om/2)*(1+OL/70)); })();
+const H0C = 1/2997.92458;                    // H0/c in h/Mpc
+/* delta(k) = alpha(k) phi(k); phi is the primordial (Bardeen) potential, positive in wells */
+/* T(k) tabulated on a log grid (the field build needs it for every mode) */
+const LT0 = Math.log(1e-4), LT1 = Math.log(10), NT = 4096;
+const T_TAB = Float64Array.from({length:NT+1}, (_, i) => ehTransfer(Math.exp(LT0 + (LT1-LT0)*i/NT)));
+function alphaK(k){
+  const x = (Math.log(k) - LT0)/(LT1-LT0)*NT, i = clamp(Math.floor(x), 0, NT-1), f = x - i;
+  return 2*k*k*(T_TAB[i]*(1-f) + T_TAB[i+1]*f)*D0/(3*COSMO.Om*H0C*H0C);
+}
+/* large-scale bias with a PNG term: b(k) = b + b_phi f / alpha(k) */
+const biasK = (k, b, bphi, f) => b + bphi*f/alphaK(k);
+
+/* Build one universe from a seed. Returns plain typed arrays; no drawing. */
+function buildFields(seed){
+  const r = mulberry32(seed), N2 = N*N, kf = TAU/L_BOX;
+  const re = new Float64Array(N2), im = new Float64Array(N2);
+  for(let i=0;i<N2;i++) re[i] = gauss(r);
+  fft2(re, im, false);                                     // white noise W(k)
+
+  const kOf = i => (i < N/2 ? i : i - N)*kf;
+  const nyq = (i,j) => i === N/2 || j === N/2;
+  /* phi(k) = k^((ns-3)/2) W(k) (scale-invariant in the slice) ; delta_L(k) = alpha(k) phi(k) */
+  const phR = new Float64Array(N2), phI = new Float64Array(N2);
+  let s2 = 0;
+  for(let j=0;j<N;j++) for(let i=0;i<N;i++){
+    const o = j*N+i, kx = kOf(i), ky = kOf(j), k = Math.hypot(kx,ky);
+    if(k === 0 || nyq(i,j)) continue;
+    const a = Math.pow(k, (COSMO.ns-3)/2);
+    phR[o] = a*re[o]; phI[o] = a*im[o];
+    const d = alphaK(k)*Math.exp(-0.5*k*k*R_T*R_T);
+    s2 += d*d*(phR[o]*phR[o] + phI[o]*phI[o]);
+  }
+  const dNorm = SIGMA_ZEL/Math.sqrt(s2/(N2*N2));           // sets the truncated delta_L rms
+
+  /* Zel'dovich displacement Psi(k) = i k/k^2 delta_L(k), in box units; Psi_x + i Psi_y in one IFFT */
+  const pr = new Float64Array(N2), pi = new Float64Array(N2);
+  for(let j=0;j<N;j++) for(let i=0;i<N;i++){
+    const o = j*N+i, kx = kOf(i), ky = kOf(j), k2 = kx*kx+ky*ky;
+    if(k2 === 0 || nyq(i,j)) continue;
+    const d = dNorm*alphaK(Math.sqrt(k2))*Math.exp(-0.5*k2*R_T*R_T)/(k2*L_BOX);
+    const dr = d*phR[o], di = d*phI[o];                    // delta_L/(k^2 L)
+    /* Psi_x(k) = i kx (dr + i di) = -kx di + i kx dr ; Psi_y likewise; combine A + iB */
+    const axr = -kx*di, axi = kx*dr, ayr = -ky*di, ayi = ky*dr;
+    pr[o] = axr - ayi; pi[o] = axi + ayr;
+  }
+  fft2(pr, pi, true);
+  const psiX = new Float32Array(N2), psiY = new Float32Array(N2);
+  for(let i=0;i<N2;i++){ psiX[i] = pr[i]; psiY[i] = pi[i]; }
+
+  /* Eulerian density on the N grid: CIC of the N^2 particles */
+  const rho = new Float64Array(N2);
+  for(let j=0;j<N;j++) for(let i=0;i<N;i++){
+    const o = j*N+i, x = (i + psiX[o]*N), y = (j + psiY[o]*N);
+    const x0 = Math.floor(x), y0 = Math.floor(y), fx = x-x0, fy = y-y0;
+    const i0 = ((x0%N)+N)%N, j0 = ((y0%N)+N)%N, i1 = (i0+1)%N, j1 = (j0+1)%N;
+    rho[j0*N+i0] += (1-fx)*(1-fy); rho[j0*N+i1] += fx*(1-fy);
+    rho[j1*N+i0] += (1-fx)*fy;     rho[j1*N+i1] += fx*fy;
+  }
+  const dE = new Float32Array(N2);
+  for(let i=0;i<N2;i++) dE[i] = rho[i] - 1;
+
+  /* smoothed Eulerian density: tidal tensor K and delta_s (galaxy response), delta_16 (cluster finder) */
+  re.fill(0); im.fill(0);
+  for(let i=0;i<N2;i++) re[i] = dE[i];
+  fft2(re, im, false);
+  const kr = new Float64Array(N2), ki = new Float64Array(N2);   // K+ + i Kx
+  const sr = new Float64Array(N2), si = new Float64Array(N2);   // delta_s + i delta_16
+  const qr = new Float64Array(N2), qi = new Float64Array(N2);   // psi+ + i psix (primordial tide)
+  const fr = new Float64Array(N2), fi = new Float64Array(N2);   // phi
+  for(let j=0;j<N;j++) for(let i=0;i<N;i++){
+    const o = j*N+i, kx = kOf(i), ky = kOf(j), k2 = kx*kx+ky*ky;
+    if(k2 === 0 || nyq(i,j)) continue;
+    const ws = Math.exp(-0.5*k2*R_S*R_S), w16 = Math.exp(-0.5*k2*16*16);
+    const c1 = (kx*kx - ky*ky)/(2*k2), c2 = kx*ky/k2;            // (K11-K22)/2 and K12 operators
+    const dr = re[o]*ws, di = im[o]*ws;
+    kr[o] = c1*dr - c2*di; ki[o] = c1*di + c2*dr;                // A = c1 d, B = c2 d -> A + iB
+    sr[o] = dr - w16*im[o]; si[o] = di + w16*re[o];              // A = delta_s, B = delta_16
+    const wp = Math.exp(-0.5*k2*R_PHI*R_PHI), ar = wp*phR[o], ai = wp*phI[o];
+    qr[o] = c1*ar - c2*ai; qi[o] = c1*ai + c2*ar;
+    fr[o] = ar; fi[o] = ai;
+  }
+  fft2(kr, ki, true); fft2(sr, si, true); fft2(qr, qi, true); fft2(fr, fi, true);
+
+  const f32 = a => Float32Array.from(a);
+  return {psiX, psiY, dE, Kp:f32(kr), Kx:f32(ki), dS:f32(sr), d16:f32(si), Qp:f32(qr), Qx:f32(qi), phi:f32(fr)};
+}
+
+const rms = (A, B) => { let s=0; for(let i=0;i<A.length;i++) s += A[i]*A[i] + (B ? B[i]*B[i] : 0); return Math.sqrt(s/A.length); };
+function meanStd(A){ let m=0, s=0; for(const v of A) m+=v; m/=A.length; for(const v of A) s+=(v-m)*(v-m); return [m, Math.sqrt(s/A.length)]; }
+
+/* =====================================================================
+   4. Baked layers: density image, streamlines, potential contours
+   ===================================================================== */
+/* dark-matter column density from 3x3 sub-particles per cell (bilinear Psi), CIC onto M_IMG^2 */
+function bakeDensity(F){
+  const M = M_IMG, S = M/N, rho = new Float32Array(M*M), PX = F.psiX, PY = F.psiY;
+  /* sub-particle (a,b) of cell (ci,cj) sits at node offset ((a+0.5)/S, (b+0.5)/S): fixed bilinear weights */
+  for(let cj=0;cj<N;cj++) for(let ci=0;ci<N;ci++){
+    const i1 = (ci+1)%N, j1 = (cj+1)%N;
+    const o00 = cj*N+ci, o10 = cj*N+i1, o01 = j1*N+ci, o11 = j1*N+i1;
+    for(let b=0;b<S;b++){
+      const fy = (b+0.5)/S;
+      for(let a=0;a<S;a++){
+        const fx = (a+0.5)/S, w00 = (1-fx)*(1-fy), w10 = fx*(1-fy), w01 = (1-fx)*fy, w11 = fx*fy;
+        const dx = PX[o00]*w00 + PX[o10]*w10 + PX[o01]*w01 + PX[o11]*w11;
+        const dy = PY[o00]*w00 + PY[o10]*w10 + PY[o01]*w01 + PY[o11]*w11;
+        const x = (ci + fx)*S + dx*M - 0.5, y = (cj + fy)*S + dy*M - 0.5;   // Lagrangian + Psi, pixel-node units
+        const x0 = Math.floor(x), y0 = Math.floor(y), gx = x-x0, gy = y-y0;
+        const p0 = ((x0%M)+M)%M, q0 = ((y0%M)+M)%M, p1 = p0+1 === M ? 0 : p0+1, q1 = q0+1 === M ? 0 : q0+1;
+        rho[q0*M+p0] += (1-gx)*(1-gy); rho[q0*M+p1] += gx*(1-gy);
+        rho[q1*M+p0] += (1-gx)*gy;     rho[q1*M+p1] += gx*gy;
+      }
+    }
+  }
+  /* log stretch between robust percentiles, then a dark violet ramp */
+  const lg = new Float32Array(M*M);
+  for(let i=0;i<M*M;i++) lg[i] = Math.log(0.25 + rho[i]);
+  const smp = []; for(let i=0;i<M*M;i+=97) smp.push(lg[i]); smp.sort((a,b)=>a-b);
+  const lo = smp[Math.floor(smp.length*0.04)], hi = smp[Math.floor(smp.length*0.9985)];
+  const c = makeCanvas(M,M), g = c.getContext('2d'), img = g.createImageData(M,M), px = img.data;
+  const STOPS = [[0,[6,8,16]],[0.35,[24,22,52]],[0.62,[62,52,118]],[0.84,[128,112,190]],[1,[226,218,255]]];
+  for(let i=0;i<M*M;i++){
+    const t = c01((lg[i]-lo)/(hi-lo));
+    let k = 1; while(k < STOPS.length-1 && STOPS[k][0] < t) k++;
+    const [t0,a] = STOPS[k-1], [t1,b] = STOPS[k], w = (t-t0)/(t1-t0);
+    px[4*i] = a[0]+(b[0]-a[0])*w; px[4*i+1] = a[1]+(b[1]-a[1])*w; px[4*i+2] = a[2]+(b[2]-a[2])*w; px[4*i+3] = 255;
+  }
+  g.putImageData(img,0,0);
+  return c;
+}
+
+/* Trace headless streamlines of the stretching direction of a trace-free tensor (P, X):
+   the stretching eigenvector has angle theta = atan2(X, P)/2 + pi/2. */
+function traceLines(P, X, norm, nLines, steps, h, seed, jitterGrid){
+  const r = mulberry32(seed), g = Math.ceil(Math.sqrt(nLines)), n = g*g, len = 2*steps+1;
+  const pts = new Float32Array(n*len*2), str = new Float32Array(n), rank = new Float32Array(n);
+  const dirAt = (u,v) => { const p = sample(P,u,v), x = sample(X,u,v), th = 0.5*Math.atan2(x,p) + Math.PI/2;
+    return [Math.cos(th), Math.sin(th), Math.hypot(p,x)]; };
+  for(let l=0;l<n;l++){
+    const u0 = ((l%g) + (jitterGrid ? r() : 0.5))/g, v0 = ((Math.floor(l/g)) + (jitterGrid ? r() : 0.5))/g;
+    const base = l*len*2, d0 = dirAt(u0,v0);
+    str[l] = d0[2]/norm; rank[l] = r();
+    pts[base + 2*steps] = u0; pts[base + 2*steps + 1] = v0;
+    for(const sgn of [1,-1]){
+      let u = u0, v = v0, px = sgn*d0[0], py = sgn*d0[1];
+      for(let s=1;s<=steps;s++){
+        /* midpoint step, keeping the headless direction continuous */
+        let [dx,dy] = dirAt(u,v); if(dx*px+dy*py < 0){ dx=-dx; dy=-dy; }
+        let [mx,my] = dirAt(u+0.5*h*dx, v+0.5*h*dy); if(mx*dx+my*dy < 0){ mx=-mx; my=-my; }
+        u += h*mx; v += h*my; px = mx; py = my;
+        const k = base + 2*(steps + sgn*s);
+        pts[k] = u; pts[k+1] = v;
+      }
+    }
+  }
+  return {pts, str, rank, n, len};
+}
+
+/* marching-squares contours of the long-wavelength phi (unit rms); no fill, so amber stays "galaxy size" */
+function bakePotential(phiN){
+  const G = 128, grid = new Float32Array(G*G);
+  for(let j=0;j<G;j++) for(let i=0;i<G;i++) grid[j*G+i] = sample(phiN, (i+0.5)/G, (j+0.5)/G);
+  const levels = [-1.6,-0.8,0.8,1.6], segs = levels.map(() => []);
+  levels.forEach((lev, li) => {
+    for(let j=0;j<G;j++) for(let i=0;i<G;i++){
+      const i1 = (i+1)%G, j1 = (j+1)%G;
+      const a = grid[j*G+i]-lev, b = grid[j*G+i1]-lev, c = grid[j1*G+i1]-lev, d = grid[j1*G+i]-lev;
+      const e = [];
+      const edge = (p,q,x0,y0,x1,y1) => { if((p>0) !== (q>0)){ const t = p/(p-q); e.push((x0+(x1-x0)*t+0.5)/G, (y0+(y1-y0)*t+0.5)/G); } };
+      edge(a,b,i,j,i+1,j); edge(b,c,i+1,j,i+1,j+1); edge(c,d,i+1,j+1,i,j+1); edge(d,a,i,j+1,i,j);
+      segs[li].push(...e);                                  // 2 or 4 crossings -> 1 or 2 segments
+    }
+  });
+  return {levels, segs};
+}
+
+/* =====================================================================
+   5. Galaxies: biased sampling of displaced sub-particles, fields at x
+   ===================================================================== */
+function makeGalaxies(F, seed){
+  const r = mulberry32(seed ^ 0x9e3779b9), n = N_GAL;
+  const G = {n, x:new Float32Array(n), y:new Float32Array(n), rank:new Float32Array(n),
+    d:new Float32Array(n), k1:new Float32Array(n), k2:new Float32Array(n),
+    p:new Float32Array(n), q1:new Float32Array(n), q2:new Float32Array(n),
+    e1:new Float32Array(n), e2:new Float32Array(n), s:new Float32Array(n), lum:new Float32Array(n)};
+  /* extra bias on top of mass-weighted (Lagrangian-uniform) sampling */
+  const smp = []; for(let i=0;i<F.dE.length;i+=31) smp.push(F.dE[i]); smp.sort((a,b)=>a-b);
+  const cap = 1 + smp[Math.floor(smp.length*0.995)];
+  const lnd = new Float32Array(n);
+  for(let m=0; m<n; ){
+    const qu = r(), qv = r();
+    const u = wrap(qu + sample(F.psiX, qu, qv)), v = wrap(qv + sample(F.psiY, qu, qv));
+    const w = Math.pow(Math.max(0, 1 + sample(F.dE, u, v))/cap, 0.3);
+    if(r() > w) continue;
+    G.x[m] = u; G.y[m] = v; G.rank[m] = r();
+    lnd[m] = Math.log(Math.max(0.05, 1 + sample(F.dS, u, v)));
+    G.k1[m] = sample(F.Kp, u, v); G.k2[m] = sample(F.Kx, u, v);
+    G.p[m] = sample(F.phi, u, v);
+    G.q1[m] = sample(F.Qp, u, v); G.q2[m] = sample(F.Qx, u, v);
+    const er = Math.abs(GAIN.e_rand*gauss(r)), th = TAU*r();
+    G.e1[m] = er*Math.cos(2*th); G.e2[m] = er*Math.sin(2*th);
+    G.s[m] = GAIN.s_rand*gauss(r); G.lum[m] = 0.55 + 0.45*r();
+    m++;
+  }
+  /* normalise each response field to unit rms over the galaxy sample */
+  const [md, sd] = meanStd(lnd);
+  for(let m=0;m<n;m++) G.d[m] = (lnd[m]-md)/sd;
+  const kN = rms(G.k1, G.k2), qN = rms(G.q1, G.q2), [mp, sp] = meanStd(G.p);
+  for(let m=0;m<n;m++){
+    G.k1[m] /= kN; G.k2[m] /= kN; G.q1[m] /= qN; G.q2[m] /= qN; G.p[m] = (G.p[m]-mp)/sp;
+  }
+  return G;
+}
+
+/* cluster to zoom into: highest 16 Mpc/h-smoothed density in the central region */
+function findCluster(F){
+  let best = -1e9, bu = 0.5, bv = 0.5;
+  for(let j=Math.floor(0.3*N); j<0.7*N; j++) for(let i=Math.floor(0.3*N); i<0.7*N; i++){
+    const v = F.d16[j*N+i]; if(v > best){ best = v; bu = i/N; bv = j/N; }
+  }
+  return {u:bu, v:bv};
+}
+
+/* =====================================================================
+   6. Timeline: the narrative as keyframed tracks
+   ===================================================================== */
+const T_TOTAL = 56;
+const TRACKS = {
+  dm:    [[0.2,0],[1.9,1],[13.6,1],[15.0,0.72]],
+  zs:    [[4.2,0],[7.2,1],[23.6,1],[26.6,0]],          // zoom progress 0..1 (z = Z_MAX^zs)
+  tide:  [[7.4,0],[9.4,1],[20.8,1],[22.6,0.35],[24.6,0]],
+  gal:   [[13.6,0],[15.0,1]],
+  shape: [[15.6,0],[18.6,1]],
+  ring:  [[16.4,0],[17.2,1],[20.0,1],[20.8,0]],
+  size:  [[20.6,0],[23.0,1]],
+  tint:  [[20.6,0],[22.0,1]],                           // colour galaxies by size from the size beat on
+  plot:  [[23.6,0],[25.4,1]],
+  phi:   [[26.8,0],[28.4,1],[35.8,1],[37.6,0],[49.6,0],[51.2,1]],
+  fnl:   [[29.0,0],[32.6,F_LOC],[35.4,F_LOC],[37.4,0],[49.8,0],[52.2,F_LOC]],
+  psi:   [[38.3,0],[40.0,1]],
+  fnl2:  [[40.6,0],[44.2,F_S2]],
+};
+function track(keys, t){
+  if(t <= keys[0][0]) return keys[0][1];
+  for(let i=1;i<keys.length;i++){
+    if(t <= keys[i][0]){ const [t0,v0] = keys[i-1], [t1,v1] = keys[i]; return lerp(v0, v1, eio((t-t0)/(t1-t0))); }
+  }
+  return keys[keys.length-1][1];
+}
+const SCENES = [
+  {t:0,    key:'web'},
+  {t:7.2,  key:'tide'},
+  {t:13.4, key:'shapes'},
+  {t:20.2, key:'sizes'},
+  {t:26.6, key:'fnl'},
+  {t:38.0, key:'fnl2'},
+  {t:49.4, key:'both'},
+];
+const sceneAt = t => { let s = 0; for(let i=0;i<SCENES.length;i++) if(t >= SCENES[i].t) s = i; return s; };
+
+/* narrative state at time t (pure function of t) */
+function stateAt(t){
+  const s = {t, g: Math.min(1, 1 - eio((t - (T_TOTAL-1.3))/1.2))};
+  for(const k in TRACKS) s[k] = track(TRACKS[k], t);
+  s.zoom = Math.pow(Z_MAX, s.zs);
+  /* zoom toward the cluster, keeping its screen position moving linearly */
+  s.cx = U.target.u - (1 - s.zs)*(U.target.u - 0.5)/s.zoom;
+  s.cy = U.target.v - (1 - s.zs)*(U.target.v - 0.5)/s.zoom;
+  s.galAmp = 1;
+  return s;
+}
+
+/* =====================================================================
+   7. Rendering
+   ===================================================================== */
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const uiEl = document.getElementById('ui');
+let SCL = 1, OX = 0, OY = 0, DPR = 1;
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  cv.width = innerWidth*DPR; cv.height = innerHeight*DPR;
+  SCL = Math.min(innerWidth/W, innerHeight/H);
+  OX = (innerWidth - W*SCL)/2; OY = (innerHeight - H*SCL)/2;
+  uiEl.style.transform = `translate(${OX}px,${OY}px) scale(${SCL})`;
+}
+addEventListener('resize', resize); resize();
+const setDesign = () => ctx.setTransform(SCL*DPR, 0, 0, SCL*DPR, OX*DPR, OY*DPR);
+
+/* box (u,v) -> design px for camera (cx, cy, zoom) */
+function cam(s){
+  const k = SP.s*s.zoom, x0 = SP.x + SP.s/2 - s.cx*k, y0 = SP.y + SP.s/2 - s.cy*k;
+  return {k, x0, y0, X: u => x0 + u*k, Y: v => y0 + v*k,
+    u0: s.cx - 0.5/s.zoom, u1: s.cx + 0.5/s.zoom, v0: s.cy - 0.5/s.zoom, v1: s.cy + 0.5/s.zoom};
+}
+/* level of detail: fraction of stored objects shown so on-screen density stays constant */
+const lodFrac = z => Math.min(1, (z/Z_MAX)*(z/Z_MAX));
+const lodAlpha = (rank, f) => c01((f - rank)/(0.18*f));
+
+function drawLines(L, C, alpha, color, width, useLod, zoom){
+  if(alpha <= 0.004) return;
+  const f = useLod ? lodFrac(zoom) : 1, pad = 0.03;
+  const BUCKETS = 5, paths = Array.from({length:BUCKETS}, () => new Path2D());
+  for(let l=0;l<L.n;l++){
+    if(useLod && L.rank[l] > f) continue;
+    const b = L.len*2*l, mu = L.pts[b + L.len - 1], mv = L.pts[b + L.len];
+    if(mu < C.u0-pad || mu > C.u1+pad || mv < C.v0-pad || mv > C.v1+pad) continue;
+    const a = c01(L.str[l]/1.6)*(useLod ? lodAlpha(L.rank[l], f) : 1);
+    const bi = Math.min(BUCKETS-1, Math.floor(a*BUCKETS)); if(a < 0.06) continue;
+    const p = paths[bi];
+    p.moveTo(C.X(L.pts[b]), C.Y(L.pts[b+1]));
+    for(let s=1;s<L.len;s++) p.lineTo(C.X(L.pts[b+2*s]), C.Y(L.pts[b+2*s+1]));
+  }
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineWidth = width; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for(let i=0;i<BUCKETS;i++){ ctx.strokeStyle = rgba(color, alpha*(i+0.8)/BUCKETS); ctx.stroke(paths[i]); }
+  ctx.restore();
+}
+
+function drawPotential(s, C){
+  const a = s.phi*s.g; if(a <= 0.004) return;
+  ctx.save();
+  ctx.globalAlpha = a; ctx.lineWidth = 1.6;
+  U.pot.levels.forEach((lev, li) => {
+    ctx.strokeStyle = lev > 0 ? rgba(AMBER, 0.8) : 'rgba(170,175,215,0.6)';
+    ctx.setLineDash(lev > 0 ? [] : [6,6]);
+    const sg = U.pot.segs[li]; ctx.beginPath();
+    for(let i=0;i<sg.length;i+=4){ ctx.moveTo(C.X(sg[i]), C.Y(sg[i+1])); ctx.lineTo(C.X(sg[i+2]), C.Y(sg[i+3])); }
+    ctx.stroke();
+  });
+  ctx.restore();
+}
+
+/* current per-galaxy response amplitudes */
+function galaxyParams(s){
+  return {aK: GAIN.K*s.shape, aQ: GAIN.psi*s.fnl2/F_S2, aS: GAIN.s*s.size, aP: -GAIN.phi*s.fnl/F_LOC};
+}
+const SMALL = [130,120,170];                 // tint for galaxies smaller than average (larger ones go amber)
+function drawGalaxies(s, C){
+  const A = s.gal*s.g; if(A <= 0.004) return;
+  const G = U.gal, f = lodFrac(s.zoom), P = galaxyParams(s), pad = 0.01;
+  const r0 = R0*(1 + 0.16*Math.log2(s.zoom));            // a little larger when zoomed in
+  /* batched by (size colour, brightness); three nested ellipses (halo, body, core) mimic a light profile */
+  const NB = 4, NC = 7, TIERS = [[1.55, 0.10], [0.95, 0.30], [0.52, 0.95]];
+  const paths = TIERS.map(() => Array.from({length:NB*NC}, () => new Path2D()));
+  for(let i=0;i<G.n;i++){
+    if(G.rank[i] > f) continue;
+    const u = G.x[i], v = G.y[i];
+    if(u < C.u0-pad || u > C.u1+pad || v < C.v0-pad || v > C.v1+pad) continue;
+    const a = G.lum[i]*lodAlpha(G.rank[i], f); if(a < 0.05) continue;
+    /* spin-2: ellipticity (major axis along the stretching direction for positive amplitudes) */
+    let e1 = G.e1[i] - P.aK*G.k1[i] - P.aQ*G.q1[i];
+    let e2 = G.e2[i] - P.aK*G.k2[i] - P.aQ*G.q2[i];
+    let e = Math.hypot(e1,e2);
+    const ec = 0.78*Math.tanh(e/0.78);                    // soft cap: no needles
+    if(e > 1e-6){ e1 *= ec/e; e2 *= ec/e; } e = ec;
+    /* spin-0: log size; area-preserving axes a*b = R^2 */
+    const lnR = G.s[i] + P.aS*G.d[i] + P.aP*G.p[i], R = r0*Math.exp(lnR);
+    const ax = R*Math.sqrt((1+e)/(1-e)), by = R*Math.sqrt((1-e)/(1+e)), th = 0.5*Math.atan2(e2, e1);
+    const X = C.X(u), Y = C.Y(v);
+    const ci = Math.round(clamp(lnR/0.3, -1, 1)*(NC-1)/2 + (NC-1)/2), bi = Math.min(NB-1, Math.floor(a*NB));
+    TIERS.forEach(([sc], k) => { const p = paths[k][ci*NB + bi]; p.ellipse(X, Y, sc*ax, sc*by, th, 0, TAU); p.closePath(); });
+  }
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for(let c=0;c<NC;c++){
+    const z = (2*c/(NC-1) - 1)*s.tint, col = z > 0 ? mixRGB(GAL, AMBER, 0.85*z) : mixRGB(GAL, SMALL, -0.8*z);
+    TIERS.forEach(([, al], k) => { for(let b=0;b<NB;b++){
+      ctx.fillStyle = rgba(col, al*A*(b+1)/NB); ctx.fill(paths[k][c*NB + b]); } });
+  }
+  ctx.restore();
+}
+
+function drawRing(s, C){
+  const a = s.ring*s.g; if(a <= 0.004) return;
+  const X = C.X(U.target.u), Y = C.Y(U.target.v), r = 38/L_BOX*C.k;
+  ctx.save();
+  ctx.strokeStyle = rgba(CYAN, 0.8*a); ctx.lineWidth = 2; ctx.setLineDash([5,7]);
+  ctx.beginPath(); ctx.arc(X, Y, r, 0, TAU); ctx.stroke();
+  ctx.restore();
+}
+
+function drawScaleBar(s, C){
+  const mpc = s.zoom > 2 ? 100 : 500, len = mpc/L_BOX*C.k;
+  const x = SP.x + SP.s - 24 - len, y = SP.y + SP.s - 28, right = x + len;
+  ctx.save();
+  ctx.fillStyle = 'rgba(5,7,13,0.62)'; ctx.fillRect(Math.min(x, right - 230) - 10, y - 34, right - Math.min(x, right - 230) + 20, 52);
+  ctx.strokeStyle = 'rgba(233,231,220,0.75)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x+len, y); ctx.moveTo(x, y-5); ctx.lineTo(x, y+5);
+  ctx.moveTo(x+len, y-5); ctx.lineTo(x+len, y+5); ctx.stroke();
+  ctx.fillStyle = 'rgba(233,231,220,0.8)'; ctx.font = '15px ' + getComputedStyle(document.body).getPropertyValue('--mono');
+  ctx.textAlign = 'right';
+  const ly = mpc*3.2616/COSMO.h/1000;                       // billion light-years
+  ctx.fillText(UI.notation ? `${mpc} Mpc/h` : `${ly < 1 ? (ly*1000).toFixed(0)+' million' : ly.toFixed(1)+' billion'} light-years`, right, y-12);
+  ctx.restore();
+}
+
+function drawSlice(s){
+  const C = cam(s);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(SP.x, SP.y, SP.s, SP.s); ctx.clip();
+  ctx.fillStyle = '#06080f'; ctx.fillRect(SP.x, SP.y, SP.s, SP.s);
+  if(s.dm*s.g > 0.004){
+    ctx.globalAlpha = s.dm*s.g; ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(U.dens, C.x0, C.y0, C.k, C.k); ctx.globalAlpha = 1;
+  }
+  drawPotential(s, C);
+  drawLines(U.tide, C, 0.85*s.tide*s.g, [170,232,248], 1.3, true, s.zoom);
+  drawLines(U.ptide, C, 0.55*s.psi*s.g, CYAN, 1.8, false, s.zoom);
+  drawGalaxies(s, C);
+  drawRing(s, C);
+  ctx.restore();
+  ctx.strokeStyle = '#1d2742'; ctx.lineWidth = 1.5; ctx.strokeRect(SP.x, SP.y, SP.s, SP.s);
+  if(s.dm*s.g > 0.2) drawScaleBar(s, C);
+}
+
+/* response vs scale, one panel per spin: b(k) = b + b_phi f / alpha(k) */
+const LK0 = -3, LK1 = Math.log10(0.5);
+const PANELS = [
+  {key:'spin0', h:118, y0:-3, y1:5, ref:0, ticks:[[0,'0'],[2,'2']], tag:['sizes · counts','spin-0']},
+  {key:'spin2', h:84,  y0:0,  y1:3, ref:1, ticks:[[1,'1'],[2,'2']], tag:['shapes','spin-2']},
+];
+const PGAP = 34;
+const pk = lk => RP.x + (lk-LK0)/(LK1-LK0)*RP.w;
+function curvesFor(P, s){
+  const b1R = BIAS.b1R*s.size;
+  return P.key === 'spin0'
+    ? [{f: k => biasK(k, BIAS.b1, BIAS.bphi, s.fnl), col:[233,231,220], lw:2, dash:[7,6], lab:['counts','b_g(k)']},
+       {f: k => biasK(k, b1R, BIAS.bphiR, s.fnl),  col:AMBER, lw:3, dash:[], lab:['sizes','b_R(k)']}]
+    : [{f: k => biasK(k, 1, BIAS.psiOverK, s.fnl2), col:CYAN, lw:3, dash:[], lab:['shapes','b_K(k) / b_K']}];
+}
+function drawPlot(s){
+  RP.y = UI.exploring ? 268 : 496;
+  const a = s.plot*s.g; if(a <= 0.004) return;
+  const mono = getComputedStyle(document.body).getPropertyValue('--mono');
+  const sans = getComputedStyle(document.body).getPropertyValue('--sans');
+  const lkv = Math.log10(TAU/(L_BOX/s.zoom));             // largest scale in view
+  const yTop = RP.y, yBot = RP.y + PANELS[0].h + PGAP + PANELS[1].h;
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.fillStyle = 'rgba(233,231,220,0.045)'; ctx.fillRect(pk(lkv), yTop, RP.x + RP.w - pk(lkv), yBot - yTop);
+  ctx.strokeStyle = 'rgba(233,231,220,0.25)'; ctx.lineWidth = 1; ctx.setLineDash([3,5]);
+  ctx.beginPath(); ctx.moveTo(pk(lkv), yTop); ctx.lineTo(pk(lkv), yBot); ctx.stroke(); ctx.setLineDash([]);
+  ctx.font = '14px ' + mono; ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(233,231,220,0.5)';
+  ctx.fillText(UI.notation ? 'scales in view' : 'in view', pk(lkv)+8, yTop - 8);
+
+  let y = yTop;
+  for(const P of PANELS){
+    const py = v => y + P.h - (v - P.y0)/(P.y1 - P.y0)*P.h;
+    ctx.strokeStyle = 'rgba(190,200,222,0.35)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(RP.x, y); ctx.lineTo(RP.x, y+P.h); ctx.lineTo(RP.x+RP.w, y+P.h); ctx.stroke();
+    ctx.strokeStyle = 'rgba(233,231,220,0.22)'; ctx.lineWidth = 1; ctx.setLineDash([2,5]);
+    ctx.beginPath(); ctx.moveTo(RP.x, py(P.ref)); ctx.lineTo(RP.x+RP.w, py(P.ref)); ctx.stroke(); ctx.setLineDash([]);
+    ctx.font = '600 13px ' + sans; ctx.fillStyle = '#8b93a7'; ctx.textAlign = 'left';
+    ctx.fillText(P.tag[UI.notation ? 1 : 0].toUpperCase(), RP.x, y - 8);
+    if(UI.notation){
+      ctx.font = '14px ' + mono; ctx.textAlign = 'right';
+      for(const [v, lab] of P.ticks) ctx.fillText(lab, RP.x - 8, py(v) + 5);
+    }
+    ctx.save(); ctx.beginPath(); ctx.rect(RP.x, y - 2, RP.w, P.h + 2); ctx.clip();
+    const labs = [];
+    for(const c of curvesFor(P, s)){
+      ctx.strokeStyle = rgba(c.col, 0.95); ctx.lineWidth = c.lw; ctx.setLineDash(c.dash); ctx.beginPath();
+      for(let i=0;i<=160;i++){ const lk = LK0 + (LK1-LK0)*i/160, v = py(c.f(Math.pow(10, lk)));
+        i ? ctx.lineTo(pk(lk), v) : ctx.moveTo(pk(lk), v); }
+      ctx.stroke(); ctx.setLineDash([]);
+      labs.push([c, py(c.f(0.4))]);
+    }
+    ctx.restore();
+    ctx.font = '600 16px ' + sans; ctx.textAlign = 'right';
+    for(const [c, v] of labs){ ctx.fillStyle = rgba(c.col, 1); ctx.fillText(c.lab[UI.notation ? 1 : 0], RP.x + RP.w, clamp(v - 8, y + 30, y + P.h - 6)); }
+    y += P.h + PGAP;
+  }
+  /* shared k axis */
+  ctx.font = '14px ' + mono; ctx.fillStyle = '#8b93a7'; ctx.strokeStyle = 'rgba(190,200,222,0.35)';
+  if(UI.notation){
+    ctx.textAlign = 'center';
+    for(const [lk, lab] of [[-3,'0.001'],[-2,'0.01'],[-1,'0.1']]){
+      ctx.fillText(lab, pk(lk), yBot + 22);
+      ctx.beginPath(); ctx.moveTo(pk(lk), yBot); ctx.lineTo(pk(lk), yBot + 6); ctx.stroke();
+    }
+    ctx.fillText('k  [h/Mpc]', RP.x + RP.w/2, yBot + 42);
+  } else {
+    ctx.textAlign = 'left';  ctx.fillText('← larger scales', RP.x, yBot + 24);
+    ctx.textAlign = 'right'; ctx.fillText('smaller scales →', RP.x + RP.w, yBot + 24);
+  }
+  ctx.restore();
+}
+
+/* =====================================================================
+   8. Text, HUD and explore controls
+   ===================================================================== */
+const TXT = {
+  web: {title:'The dark-matter web',
+    plain:'Gravity has gathered dark matter into a web of walls, filaments and dense clusters wrapped around empty voids.',
+    math:'<i>δ</i>(<b>x</b>): matter overdensity in a 2 Gpc/<i>h</i> slice, grown from Gaussian initial conditions (Zel’dovich approximation).'},
+  tide: {title:'Its tidal field',
+    plain:'Around every clump, gravity pulls unevenly: it stretches matter one way and squeezes it the other. The streaks trace the stretch. They have no arrowheads, since a stretch looks the same turned by 180°.',
+    math:'<span class="cya"><i>K<sub>ij</sub></i> = (∂<sub><i>i</i></sub>∂<sub><i>j</i></sub>/∇² − ⅓<i>δ<sub>ij</sub></i>) <i>δ</i></span>: the trace-free tidal tensor, spin-2. Streaks follow its stretching direction (in-plane components).'},
+  shapes: {title:'Galaxies feel the tide',
+    plain:'Galaxies form inside this field and are stretched by it. Red ellipticals tend to line up: on average their long axes run along filaments and point toward clusters, so their shapes trace the web.',
+    math:'<span class="cya"><i>γ</i><sup>I</sup><sub><i>ij</i></sub> = <i>b<sub>K</sub></i> <i>K<sub>ij</sub></i></span> + shape noise (linear / nonlinear alignment). <i>b<sub>K</sub></i> &lt; 0: the long axis follows the stretching direction, radial around clusters on average.'},
+  sizes: {title:'…and their sizes feel the density, weakly',
+    plain:'Sizes respond too, but only weakly: galaxies in denser surroundings come out slightly larger (amber) than those near voids (violet). Shapes and sizes are two extra maps of the structure.',
+    math:'<span class="amb"><i>δ</i> ln <i>R</i> = <i>b</i><sub>1</sub><sup>R</sup> <i>δ</i></span> + size scatter: the spin-0 trace of the shape tensor. <i>b</i><sub>1</sub><sup>R</sup> is small (≈ 0 for galaxy-mass halos; Nguyen, Akitsu &amp; Taruya 2026). On large scales <i>b</i>(<i>k</i>) → const.'},
+  fnl: {title:'A local imprint changes sizes',
+    plain:'With slightly non-Gaussian initial conditions, the largest-scale potential <span class="amb">φ</span> (contours) modulates how small-scale structure grows. Sizes shrink where φ is high, most strongly on the largest scales and opposite in sign to galaxy counts. Shapes get no such term.',
+    math:'<span class="amb">local <i>f</i><sub>NL</sub>: <i>δ</i> ln <i>R</i> ⊃ <i>b<sub>φ</sub></i><sup>R</sup> <i>f</i><sub>NL</sub> <i>φ</i>, <i>b<sub>φ</sub></i><sup>R</sup> &lt; 0</span> ⇒ <i>b<sub>R</sub></i>(<i>k</i>) = <i>b</i><sub>1</sub><sup>R</sup> + <i>b<sub>φ</sub></i><sup>R</sup> <i>f</i><sub>NL</sub>/<i>α</i>(<i>k</i>), <i>α</i> ∝ <i>k</i>²<i>T</i>(<i>k</i>)<i>D</i>. Shapes: no 1/<i>k</i>² term at linear order.'},
+  fnl2: {title:'A directional imprint turns shapes',
+    plain:'A direction-dependent (spin-2) imprint would instead tie shapes to the stretch pattern of φ (long streaks). Orientations follow it, most strongly on the largest scales, while sizes and positions, to first order, do not notice.',
+    math:'<span class="cya"><i>f</i><sub>NL</sub><sup>(s=2)</sup>: <i>γ</i><sup>I</sup><sub><i>ij</i></sub> ⊃ <i>b<sub>ψ</sub></i> <i>f</i><sub>NL</sub><sup>(s=2)</sup> <i>ψ<sub>ij</sub></i>, <i>ψ<sub>ij</sub></i> = (∂<sub><i>i</i></sub>∂<sub><i>j</i></sub>/∇² − ⅓<i>δ<sub>ij</sub></i>) <i>φ</i></span> ⇒ <i>b<sub>K</sub></i>(<i>k</i>) = <i>b<sub>K</sub></i> + <i>b<sub>ψ</sub></i> <i>f</i><sub>NL</sub><sup>(s=2)</sup>/<i>α</i>(<i>k</i>). Trace-free, so no linear size or count term.'},
+  both: {title:'Two windows on inflation',
+    plain:'Sizes and shapes are two new windows on the first instants. Sizes respond to local non-Gaussianity opposite to galaxy counts, so combining the two sharpens the test. Only shapes see its directional form.',
+    math:'spin-0 (counts, sizes) ↔ <span class="amb">local <i>f</i><sub>NL</sub></span>; spin-2 (shapes) ↔ <span class="cya"><i>f</i><sub>NL</sub><sup>(s=2)</sup></span>; both ∝ 1/[<i>k</i>²<i>T</i>(<i>k</i>)] on large scales [Nguyen, Akitsu &amp; Taruya 2026; Schmidt, Chisari &amp; Dvorkin 2015].'},
+};
+const LABELS = {
+  fnl:   ['Local non-Gaussianity', 'local <i>f</i><sub>NL</sub>'],
+  fnl2:  ['Directional non-Gaussianity', '<i>f</i><sub>NL</sub><sup>(s=2)</sup>'],
+  shape: ['Tidal alignment strength', '|<i>b<sub>K</sub></i>|, relative'],
+  size:  ['Size–density response', '<i>b</i><sub>1</sub><sup>R</sup>, relative'],
+  zoom:  ['Zoom', 'zoom'],
+};
+const LAYERS = [['dm','Dark matter'],['tide','Tidal field'],['phi','Potential φ'],['psi','Primordial tide ψ'],['gal','Galaxies']];
+const LAYER_ON = {dm:0.75, tide:1, phi:1, psi:1, gal:1};
+const LEGEND = {
+  plain:'<div><b class="amb">amber</b><span>sizes and what changes them: density, the potential φ, local non-Gaussianity</span></div>'+
+        '<div><b class="cya">cyan</b><span>shapes and what turns them: the tidal field, the stretch pattern ψ of φ, directional non-Gaussianity</span></div>',
+  math: '<div><b class="amb">spin-0</b><span><i>δ</i> ln <i>R</i> ← <i>δ</i>, <i>φ</i>, local <i>f</i><sub>NL</sub> &nbsp;(counts too)</span></div>'+
+        '<div><b class="cya">spin-2</b><span><i>γ</i><sup>I</sup><sub><i>ij</i></sub> ← <i>K<sub>ij</sub></i>, <i>ψ<sub>ij</sub></i>, <i>f</i><sub>NL</sub><sup>(s=2)</sup></span></div>',
+};
+const NOTE = {
+  plain:'Toy 2D model · galaxy positions frozen · per-galaxy effects exaggerated (alignments ~30×, non-Gaussian terms ~10³×); the curves are not.',
+  math:'2D slice, P_φ ∝ k^(n_s−3) · positions frozen · map: alignment ~30×, PNG terms ~10³× · plot: b₁=2, b_φ=2δ_c(b₁−1); b₁ᴿ=0.3, b_φᴿ=−3; b_ψ=b_K (illustrative)',
+};
+
+const $ = id => document.getElementById(id);
+const UI = {notation:false, scene:-1, exploring:false};
+function setNotation(on){
+  UI.notation = on;
+  document.body.classList.toggle('notation', on);
+  $('m-plain').classList.toggle('on', !on); $('m-math').classList.toggle('on', on);
+  $('m-plain').setAttribute('aria-pressed', !on); $('m-math').setAttribute('aria-pressed', on);
+  $('legend').innerHTML = on ? LEGEND.math : LEGEND.plain;
+  $('note').textContent = on ? NOTE.math : NOTE.plain;
+  $('plothead').textContent = on ? 'Large-scale bias' : 'Response on large scales';
+  document.querySelectorAll('#explore label').forEach(l => { l.innerHTML = LABELS[l.dataset.k][on ? 1 : 0]; });
+  UI.scene = -1;                                          // force caption refresh
+}
+function setCaption(i){
+  const sc = TXT[SCENES[i].key];
+  $('step').textContent = `${i+1} / ${SCENES.length}`;
+  $('title').textContent = sc.title;
+  $('body').innerHTML = sc.plain;
+  $('math').innerHTML = sc.math;
+  UI.scene = i;
+}
+/* timeline ticks */
+SCENES.forEach(sc => { const d = document.createElement('div'); d.className = 'tick'; d.style.left = (sc.t/T_TOTAL*100)+'%'; $('track').appendChild(d); });
+LAYERS.forEach(([k, lab]) => { const b = document.createElement('button'); b.textContent = lab; b.dataset.k = k;
+  b.addEventListener('click', () => { EX[k] = EX[k] > 0.02 ? 0 : LAYER_ON[k]; syncExplore(); }); $('chips').appendChild(b); });
+
+/* ---------- explore state: a frozen copy of the narrative that sliders edit ---------- */
+let EX = null;
+function enterExplore(){
+  EX = Object.assign({}, stateAt(clock.t));
+  EX.g = 1;
+  for(const [k] of LAYERS) if(EX[k] <= 0.02) EX[k] = 0;
+  EX.plot = 1; EX.tint = 1;                               // the explore layout always shows the plot and size colours
+  UI.exploring = true; document.body.classList.add('exploring');
+  syncExplore();
+}
+function leaveExplore(){ EX = null; UI.exploring = false; document.body.classList.remove('exploring'); }
+function syncExplore(){
+  if(!EX) return;
+  $('x-fnl').value = EX.fnl; $('x-fnl2').value = EX.fnl2; $('x-shape').value = EX.shape;
+  $('x-size').value = EX.size; $('x-zoom').value = EX.zoom;
+  $('o-fnl').textContent = Math.round(EX.fnl); $('o-fnl2').textContent = Math.round(EX.fnl2);
+  $('o-shape').textContent = EX.shape.toFixed(2); $('o-size').textContent = EX.size.toFixed(2);
+  $('o-zoom').textContent = EX.zoom.toFixed(1) + '×';
+  document.querySelectorAll('#chips button').forEach(b => { const on = EX[b.dataset.k] > 0.02; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+}
+function clampCenter(){ const h = 0.5/EX.zoom; EX.cx = clamp(EX.cx, h, 1-h); EX.cy = clamp(EX.cy, h, 1-h); }
+[['x-fnl','fnl'],['x-fnl2','fnl2'],['x-shape','shape'],['x-size','size'],['x-zoom','zoom']].forEach(([id,k]) =>
+  $(id).addEventListener('input', e => { EX[k] = parseFloat(e.target.value);
+    if(k === 'zoom') clampCenter();
+    syncExplore(); }));
+
+/* =====================================================================
+   9. Clock, input, main loop
+   ===================================================================== */
+const params = new URLSearchParams(location.search);
+const clock = {t: (parseFloat(params.get('t')) || 0) % T_TOTAL, paused: params.get('pause') === '1', last: null};
+const HARD_PAUSE = clock.paused && !params.has('explore');  // ?pause=1 is a frozen still for slides
+if(!params.has('t') && matchMedia('(prefers-reduced-motion: reduce)').matches){
+  clock.t = 19.5; clock.paused = true;                      // hold a representative frame until the viewer opts in
+}
+let U = null;                                               // the current universe
+
+function buildUniverse(seed){
+  const t0 = performance.now();
+  const Fd = buildFields(seed);
+  const kN = rms(Fd.Kp, Fd.Kx), qN = rms(Fd.Qp, Fd.Qx);
+  const [mp, sp] = meanStd(Fd.phi), phiN = Fd.phi.map(v => (v-mp)/sp);
+  const u = {seed, target: findCluster(Fd), dens: bakeDensity(Fd), gal: makeGalaxies(Fd, seed),
+    tide: traceLines(Fd.Kp, Fd.Kx, kN, N_TIDE, 9, 1.1/L_BOX, seed+1, true),
+    ptide: traceLines(Fd.Qp, Fd.Qx, qN, 330, 36, 4.5/L_BOX, seed+2, true),
+    pot: bakePotential(phiN)};
+  console.info(`universe ${seed}: ${(performance.now()-t0).toFixed(0)} ms`);
+  return u;
+}
+
+function frame(ts){
+  if(clock.last === null) clock.last = ts;
+  const dt = Math.min((ts - clock.last)/1000, 0.1); clock.last = ts;
+  if(!clock.paused) clock.t = (clock.t + dt) % T_TOTAL;
+  const s = EX || stateAt(clock.t);
+
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.fillStyle = '#05070d'; ctx.fillRect(0,0,cv.width,cv.height);
+  setDesign();
+  drawSlice(s);
+  drawPlot(s);
+
+  const i = sceneAt(clock.t);
+  if(i !== UI.scene) setCaption(i);
+  const tin = clock.t - SCENES[i].t, tout = (i+1 < SCENES.length ? SCENES[i+1].t : T_TOTAL) - clock.t;
+  $('caption').style.opacity = UI.exploring ? 1 : c01(Math.min(tin/0.6, tout/0.35)) * (i === SCENES.length-1 ? s.g : 1);
+  $('plothead').style.opacity = s.plot*s.g;
+  document.body.classList.toggle('noplot', s.plot*s.g < 0.5);
+  $('fill').style.width = (clock.t/T_TOTAL*100) + '%';
+  tl.setAttribute('aria-valuenow', clock.t.toFixed(1));
+  $('status').textContent = HARD_PAUSE ? '' : clock.paused ? (UI.exploring ? 'exploring' : 'paused') : '';
+  requestAnimationFrame(frame);
+}
+
+function setPaused(p){
+  if(HARD_PAUSE) return;
+  clock.paused = p;
+  if(p) enterExplore(); else leaveExplore();
+}
+function seek(t){
+  clock.t = ((t % T_TOTAL) + T_TOTAL) % T_TOTAL;
+  if(EX) enterExplore();                                  // re-freeze the narrative at the new time
+}
+/* click toggles pause; drag on the slice pans while exploring */
+let drag = null;
+cv.addEventListener('pointerdown', e => { drag = {x:e.clientX, y:e.clientY, moved:0}; });
+addEventListener('pointermove', e => {
+  if(!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+  drag.moved += Math.abs(dx) + Math.abs(dy);
+  if(EX && drag.moved > 4){ EX.cx -= dx/(SCL*SP.s*EX.zoom); EX.cy -= dy/(SCL*SP.s*EX.zoom); clampCenter(); }
+});
+addEventListener('pointerup', () => { if(drag && drag.moved <= 4) setPaused(!clock.paused); drag = null; });
+cv.addEventListener('wheel', e => {
+  if(!EX) return; e.preventDefault();
+  EX.zoom = clamp(EX.zoom*Math.exp(-e.deltaY*0.0015), 1, 5); clampCenter(); syncExplore();
+}, {passive:false});
+/* timeline scrubbing */
+const tl = $('timeline');
+function tlSeek(e){ const r = tl.getBoundingClientRect(); seek(c01((e.clientX - r.left)/r.width)*T_TOTAL); }
+tl.addEventListener('pointerdown', e => { e.stopPropagation(); tl.setPointerCapture(e.pointerId); tlSeek(e);
+  const mv = ev => tlSeek(ev), up = () => { tl.removeEventListener('pointermove', mv); tl.removeEventListener('pointerup', up); };
+  tl.addEventListener('pointermove', mv); tl.addEventListener('pointerup', up); });
+addEventListener('keydown', e => {
+  if(e.target.tagName === 'INPUT' && e.code.startsWith('Arrow')) return;
+  if(e.code === 'Space'){ e.preventDefault(); setPaused(!clock.paused); }
+  else if(e.code === 'ArrowRight'){ e.preventDefault(); seek(clock.t + 1); }
+  else if(e.code === 'ArrowLeft'){ e.preventDefault(); seek(clock.t - 1); }
+  else if(e.code === 'KeyN') setNotation(!UI.notation);
+  else if(e.code === 'KeyF'){ document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.(); }
+});
+$('m-plain').addEventListener('click', () => setNotation(false));
+$('m-math').addEventListener('click', () => setNotation(true));
+$('b-resume').addEventListener('click', () => setPaused(false));
+$('b-reset').addEventListener('click', () => { const n = stateAt(clock.t); Object.assign(EX, {zoom:n.zoom, cx:n.cx, cy:n.cy}); syncExplore(); });
+$('b-seed').addEventListener('click', () => {
+  $('status').textContent = 'building…';
+  setTimeout(() => { U = buildUniverse((U.seed*48271 + 11) % 2147483647); const keep = EX; enterExplore();
+    for(const k of ['fnl','fnl2','shape','size','dm','tide','phi','psi','gal','plot','tint']) EX[k] = keep[k]; syncExplore(); }, 30);
+});
+
+/* boot: build after first paint so the loading line shows */
+setNotation(params.get('notation') === '1');
+requestAnimationFrame(() => setTimeout(() => {
+  U = buildUniverse(parseInt(params.get('seed')) || 20261014);
+  $('loading').remove();
+  if(params.get('explore') === '1') clock.paused = true;
+  if(clock.paused && !HARD_PAUSE) enterExplore();
+  requestAnimationFrame(frame);
+}, 20));
+</script>
+</body>
+</html>
