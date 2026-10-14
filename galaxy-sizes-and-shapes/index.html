@@ -20,7 +20,8 @@
         K+ = (k_x^2 - k_y^2)/(2k^2) delta_s,  Kx = k_x k_y / k^2 delta_s,
       and likewise psi from the long-wavelength phi (smoothed at R_PHI, k << k_galaxy).
     - Galaxies (positions frozen): ellipticity e = e_rand - A_K K~ - A_psi (fNL2/F_S2) psi~,
-      log size  ln R = ln R0 + s_rand + A_s delta~ - A_phi (fNL/F_LOC) phi~   (b_phi^R < 0),
+      log size  ln R = ln R0 + s_rand + A_s [ln(1+delta_s)]~ - A_phi (fNL/F_LOC) phi~   (b_phi^R < 0),
+      (the log-density equals delta_s at linear order and keeps cluster galaxies from blowing up)
       where ~ marks fields normalised to unit rms. Major axes follow the stretching
       direction (b_K < 0): along filaments, radial around clusters on average.
     - Response plot: b(k) = b + b_phi f / alpha(k) with illustrative biases (BIAS below):
@@ -42,7 +43,7 @@
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;background:var(--bg);overflow:hidden}
   body{-webkit-font-smoothing:antialiased;color:var(--ink);font-family:var(--sans)}
-  #cv{position:fixed;inset:0;width:100%;height:100%;display:block}
+  #cv{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
 
   /* The HUD is laid out in a fixed 1920x1080 design space and scaled to the
      letterboxed stage from JS, so canvas and HTML share one coordinate system. */
@@ -58,7 +59,7 @@
     border:0;padding:7px 13px;cursor:pointer}
   #mode button.on{color:var(--bg);background:var(--ink)}
 
-  #caption{left:1090px;top:112px;width:770px;transition:opacity .25s}
+  #caption{left:1090px;top:112px;width:770px}
   #step{font:500 15px var(--mono);letter-spacing:.14em;color:var(--faint)}
   #title{font:600 40px/1.15 var(--serif);margin:8px 0 14px;letter-spacing:.005em}
   #body{font-size:23px;line-height:1.48;color:#cfd2dc;margin:0}
@@ -68,7 +69,7 @@
   #math i{font-style:italic}
 
   #plothead{left:1090px;top:440px;width:770px;font-size:15px;letter-spacing:.2em;
-    text-transform:uppercase;color:var(--dim);transition:opacity .3s}
+    text-transform:uppercase;color:var(--dim)}
 
   #legend{left:1090px;top:800px;width:770px;font-size:19px;line-height:1.5;color:#c3c7d2;transition:top .6s}
   body.noplot #legend{top:452px}
@@ -92,7 +93,7 @@
   .btns .primary{color:var(--bg);background:var(--ink);border-color:var(--ink)}
   button:focus-visible,input:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
 
-  #timeline{left:1090px;top:1004px;width:770px;height:22px;pointer-events:auto;cursor:pointer}
+  #timeline{left:1090px;top:1004px;width:770px;height:22px;pointer-events:auto;cursor:pointer;touch-action:none}
   #track{position:absolute;left:0;right:0;top:9px;height:3px;background:var(--line);border-radius:2px}
   #fill{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--dim);border-radius:2px}
   .tick{position:absolute;top:5px;width:2px;height:11px;background:var(--faint);border-radius:1px}
@@ -100,7 +101,7 @@
     display:flex;justify-content:space-between}
   #status{color:var(--dim)}
 
-  #note{left:76px;top:986px;width:930px;font:14px var(--mono);color:var(--faint);letter-spacing:.03em}
+  #note{left:76px;top:986px;width:930px;font:14px var(--mono);color:var(--dim);letter-spacing:.03em}
   #loading{left:0;top:0;width:1920px;height:1080px;display:flex;align-items:center;justify-content:center;
     font:16px var(--mono);letter-spacing:.2em;color:var(--dim);text-transform:uppercase}
 </style>
@@ -152,6 +153,8 @@ const TAU = 2*Math.PI;
 
 const AMBER = [255,180,84], CYAN = [127,216,232], GAL = [255,238,220];
 const rgba = (c,a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+const css = getComputedStyle(document.documentElement);
+const MONO = css.getPropertyValue('--mono'), SANS = css.getPropertyValue('--sans');
 const mixRGB = (A,B,t) => A.map((v,i) => Math.round(v + (B[i]-v)*t));
 
 const COSMO = {h:0.674, Om:0.315, fb:0.157, ns:0.965, Tcmb:2.7255};   // Planck 2018
@@ -386,13 +389,13 @@ function bakeDensity(F){
 
 /* Trace headless streamlines of the stretching direction of a trace-free tensor (P, X):
    the stretching eigenvector has angle theta = atan2(X, P)/2 + pi/2. */
-function traceLines(P, X, norm, nLines, steps, h, seed, jitterGrid){
+function traceLines(P, X, norm, nLines, steps, h, seed){
   const r = mulberry32(seed), g = Math.ceil(Math.sqrt(nLines)), n = g*g, len = 2*steps+1;
   const pts = new Float32Array(n*len*2), str = new Float32Array(n), rank = new Float32Array(n);
   const dirAt = (u,v) => { const p = sample(P,u,v), x = sample(X,u,v), th = 0.5*Math.atan2(x,p) + Math.PI/2;
     return [Math.cos(th), Math.sin(th), Math.hypot(p,x)]; };
   for(let l=0;l<n;l++){
-    const u0 = ((l%g) + (jitterGrid ? r() : 0.5))/g, v0 = ((Math.floor(l/g)) + (jitterGrid ? r() : 0.5))/g;
+    const u0 = ((l%g) + r())/g, v0 = (Math.floor(l/g) + r())/g;     // jittered grid of seeds
     const base = l*len*2, d0 = dirAt(u0,v0);
     str[l] = d0[2]/norm; rank[l] = r();
     pts[base + 2*steps] = u0; pts[base + 2*steps + 1] = v0;
@@ -521,7 +524,6 @@ function stateAt(t){
   /* zoom toward the cluster, keeping its screen position moving linearly */
   s.cx = U.target.u - (1 - s.zs)*(U.target.u - 0.5)/s.zoom;
   s.cy = U.target.v - (1 - s.zs)*(U.target.v - 0.5)/s.zoom;
-  s.galAmp = 1;
   return s;
 }
 
@@ -531,12 +533,14 @@ function stateAt(t){
 const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
 const uiEl = document.getElementById('ui');
 let SCL = 1, OX = 0, OY = 0, DPR = 1;
+let lastSig = '';                                           // last drawn paused state (skip identical redraws)
 function resize(){
   DPR = Math.min(window.devicePixelRatio || 1, 2);
   cv.width = innerWidth*DPR; cv.height = innerHeight*DPR;
   SCL = Math.min(innerWidth/W, innerHeight/H);
   OX = (innerWidth - W*SCL)/2; OY = (innerHeight - H*SCL)/2;
   uiEl.style.transform = `translate(${OX}px,${OY}px) scale(${SCL})`;
+  lastSig = '';
 }
 addEventListener('resize', resize); resize();
 const setDesign = () => ctx.setTransform(SCL*DPR, 0, 0, SCL*DPR, OX*DPR, OY*DPR);
@@ -577,7 +581,7 @@ function drawPotential(s, C){
   ctx.save();
   ctx.globalAlpha = a; ctx.lineWidth = 1.6;
   U.pot.levels.forEach((lev, li) => {
-    ctx.strokeStyle = lev > 0 ? rgba(AMBER, 0.8) : 'rgba(170,175,215,0.6)';
+    ctx.strokeStyle = rgba(AMBER, lev > 0 ? 0.8 : 0.45);   // solid: phi high, dashed: phi low
     ctx.setLineDash(lev > 0 ? [] : [6,6]);
     const sg = U.pot.segs[li]; ctx.beginPath();
     for(let i=0;i<sg.length;i+=4){ ctx.moveTo(C.X(sg[i]), C.Y(sg[i+1])); ctx.lineTo(C.X(sg[i+2]), C.Y(sg[i+3])); }
@@ -588,7 +592,7 @@ function drawPotential(s, C){
 
 /* current per-galaxy response amplitudes */
 function galaxyParams(s){
-  return {aK: GAIN.K*s.shape, aQ: GAIN.psi*s.fnl2/F_S2, aS: GAIN.s*s.size, aP: -GAIN.phi*s.fnl/F_LOC};
+  return {aK: GAIN.K*s.shape, aQ: GAIN.psi*s.shape*s.fnl2/F_S2, aS: GAIN.s*s.size, aP: -GAIN.phi*s.fnl/F_LOC};   // b_psi = b_K
 }
 const SMALL = [130,120,170];                 // tint for galaxies smaller than average (larger ones go amber)
 function drawGalaxies(s, C){
@@ -614,14 +618,20 @@ function drawGalaxies(s, C){
     const ax = R*Math.sqrt((1+e)/(1-e)), by = R*Math.sqrt((1-e)/(1+e)), th = 0.5*Math.atan2(e2, e1);
     const X = C.X(u), Y = C.Y(v);
     const ci = Math.round(clamp(lnR/0.3, -1, 1)*(NC-1)/2 + (NC-1)/2), bi = Math.min(NB-1, Math.floor(a*NB));
-    TIERS.forEach(([sc], k) => { const p = paths[k][ci*NB + bi]; p.ellipse(X, Y, sc*ax, sc*by, th, 0, TAU); p.closePath(); });
+    const ct = Math.cos(th), st = Math.sin(th);
+    for(let k=0;k<TIERS.length;k++){                      // moveTo starts a new subpath: no connector lines
+      const sc = TIERS[k][0], p = paths[k][ci*NB + bi];
+      p.moveTo(X + sc*ax*ct, Y + sc*ax*st); p.ellipse(X, Y, sc*ax, sc*by, th, 0, TAU);
+    }
   }
-  ctx.save(); ctx.globalCompositeOperation = 'lighter';
-  for(let c=0;c<NC;c++){
-    const z = (2*c/(NC-1) - 1)*s.tint, col = z > 0 ? mixRGB(GAL, AMBER, 0.85*z) : mixRGB(GAL, SMALL, -0.8*z);
-    TIERS.forEach(([, al], k) => { for(let b=0;b<NB;b++){
-      ctx.fillStyle = rgba(col, al*A*(b+1)/NB); ctx.fill(paths[k][c*NB + b]); } });
-  }
+  const cols = Array.from({length:NC}, (_, c) => { const z = (2*c/(NC-1) - 1)*s.tint;
+    return z > 0 ? mixRGB(GAL, AMBER, 0.85*z) : mixRGB(GAL, SMALL, -0.8*z); });
+  ctx.save();
+  /* glow tiers add up; cores are painted over them so their tint is not clipped to white */
+  TIERS.forEach(([, al], k) => {
+    ctx.globalCompositeOperation = k < TIERS.length-1 ? 'lighter' : 'source-over';
+    for(let c=0;c<NC;c++) for(let b=0;b<NB;b++){ ctx.fillStyle = rgba(cols[c], al*A*(b+1)/NB); ctx.fill(paths[k][c*NB + b]); }
+  });
   ctx.restore();
 }
 
@@ -634,15 +644,15 @@ function drawRing(s, C){
   ctx.restore();
 }
 
-function drawScaleBar(s, C){
-  const mpc = s.zoom > 2 ? 100 : 500, len = mpc/L_BOX*C.k;
+function drawScaleBar(s, C, a){
+  const mpc = [500,200,100,50].find(m => m/L_BOX*C.k <= 260) || 50, len = mpc/L_BOX*C.k;
   const x = SP.x + SP.s - 24 - len, y = SP.y + SP.s - 28, right = x + len;
-  ctx.save();
+  ctx.save(); ctx.globalAlpha = a;
   ctx.fillStyle = 'rgba(5,7,13,0.62)'; ctx.fillRect(Math.min(x, right - 230) - 10, y - 34, right - Math.min(x, right - 230) + 20, 52);
   ctx.strokeStyle = 'rgba(233,231,220,0.75)'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x+len, y); ctx.moveTo(x, y-5); ctx.lineTo(x, y+5);
   ctx.moveTo(x+len, y-5); ctx.lineTo(x+len, y+5); ctx.stroke();
-  ctx.fillStyle = 'rgba(233,231,220,0.8)'; ctx.font = '15px ' + getComputedStyle(document.body).getPropertyValue('--mono');
+  ctx.fillStyle = 'rgba(233,231,220,0.8)'; ctx.font = '15px ' + MONO;
   ctx.textAlign = 'right';
   const ly = mpc*3.2616/COSMO.h/1000;                       // billion light-years
   ctx.fillText(UI.notation ? `${mpc} Mpc/h` : `${ly < 1 ? (ly*1000).toFixed(0)+' million' : ly.toFixed(1)+' billion'} light-years`, right, y-12);
@@ -665,7 +675,7 @@ function drawSlice(s){
   drawRing(s, C);
   ctx.restore();
   ctx.strokeStyle = '#1d2742'; ctx.lineWidth = 1.5; ctx.strokeRect(SP.x, SP.y, SP.s, SP.s);
-  if(s.dm*s.g > 0.2) drawScaleBar(s, C);
+  const sa = c01(s.dm*s.g/0.72); if(sa > 0.01) drawScaleBar(s, C, sa);
 }
 
 /* response vs scale, one panel per spin: b(k) = b + b_phi f / alpha(k) */
@@ -686,15 +696,13 @@ function curvesFor(P, s){
 function drawPlot(s){
   RP.y = UI.exploring ? 268 : 496;
   const a = s.plot*s.g; if(a <= 0.004) return;
-  const mono = getComputedStyle(document.body).getPropertyValue('--mono');
-  const sans = getComputedStyle(document.body).getPropertyValue('--sans');
   const lkv = Math.log10(TAU/(L_BOX/s.zoom));             // largest scale in view
   const yTop = RP.y, yBot = RP.y + PANELS[0].h + PGAP + PANELS[1].h;
   ctx.save(); ctx.globalAlpha = a;
   ctx.fillStyle = 'rgba(233,231,220,0.045)'; ctx.fillRect(pk(lkv), yTop, RP.x + RP.w - pk(lkv), yBot - yTop);
   ctx.strokeStyle = 'rgba(233,231,220,0.25)'; ctx.lineWidth = 1; ctx.setLineDash([3,5]);
   ctx.beginPath(); ctx.moveTo(pk(lkv), yTop); ctx.lineTo(pk(lkv), yBot); ctx.stroke(); ctx.setLineDash([]);
-  ctx.font = '14px ' + mono; ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(233,231,220,0.5)';
+  ctx.font = '14px ' + MONO; ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(233,231,220,0.5)';
   ctx.fillText(UI.notation ? 'scales in view' : 'in view', pk(lkv)+8, yTop - 8);
 
   let y = yTop;
@@ -704,10 +712,13 @@ function drawPlot(s){
     ctx.beginPath(); ctx.moveTo(RP.x, y); ctx.lineTo(RP.x, y+P.h); ctx.lineTo(RP.x+RP.w, y+P.h); ctx.stroke();
     ctx.strokeStyle = 'rgba(233,231,220,0.22)'; ctx.lineWidth = 1; ctx.setLineDash([2,5]);
     ctx.beginPath(); ctx.moveTo(RP.x, py(P.ref)); ctx.lineTo(RP.x+RP.w, py(P.ref)); ctx.stroke(); ctx.setLineDash([]);
-    ctx.font = '600 13px ' + sans; ctx.fillStyle = '#8b93a7'; ctx.textAlign = 'left';
+    ctx.font = '600 13px ' + SANS; ctx.fillStyle = '#8b93a7'; ctx.textAlign = 'left';
     ctx.fillText(P.tag[UI.notation ? 1 : 0].toUpperCase(), RP.x, y - 8);
+    const fv = Math.round(P.key === 'spin0' ? s.fnl : s.fnl2);
+    if(fv){ ctx.font = '14px ' + MONO; ctx.textAlign = 'right';
+      ctx.fillText((P.key === 'spin0' ? 'f_NL = ' : 'f_NL^(s=2) = ') + fv, RP.x + RP.w, y - 8); }
     if(UI.notation){
-      ctx.font = '14px ' + mono; ctx.textAlign = 'right';
+      ctx.font = '14px ' + MONO; ctx.textAlign = 'right';
       for(const [v, lab] of P.ticks) ctx.fillText(lab, RP.x - 8, py(v) + 5);
     }
     ctx.save(); ctx.beginPath(); ctx.rect(RP.x, y - 2, RP.w, P.h + 2); ctx.clip();
@@ -720,12 +731,12 @@ function drawPlot(s){
       labs.push([c, py(c.f(0.4))]);
     }
     ctx.restore();
-    ctx.font = '600 16px ' + sans; ctx.textAlign = 'right';
+    ctx.font = '600 16px ' + SANS; ctx.textAlign = 'right';
     for(const [c, v] of labs){ ctx.fillStyle = rgba(c.col, 1); ctx.fillText(c.lab[UI.notation ? 1 : 0], RP.x + RP.w, clamp(v - 8, y + 30, y + P.h - 6)); }
     y += P.h + PGAP;
   }
   /* shared k axis */
-  ctx.font = '14px ' + mono; ctx.fillStyle = '#8b93a7'; ctx.strokeStyle = 'rgba(190,200,222,0.35)';
+  ctx.font = '14px ' + MONO; ctx.fillStyle = '#8b93a7'; ctx.strokeStyle = 'rgba(190,200,222,0.35)';
   if(UI.notation){
     ctx.textAlign = 'center';
     for(const [lk, lab] of [[-3,'0.001'],[-2,'0.01'],[-1,'0.1']]){
@@ -757,8 +768,8 @@ const TXT = {
     plain:'Sizes respond too, but only weakly: galaxies in denser surroundings come out slightly larger (amber) than those near voids (violet). Shapes and sizes are two extra maps of the structure.',
     math:'<span class="amb"><i>δ</i> ln <i>R</i> = <i>b</i><sub>1</sub><sup>R</sup> <i>δ</i></span> + size scatter: the spin-0 trace of the shape tensor. <i>b</i><sub>1</sub><sup>R</sup> is small (≈ 0 for galaxy-mass halos; Nguyen, Akitsu &amp; Taruya 2026). On large scales <i>b</i>(<i>k</i>) → const.'},
   fnl: {title:'A local imprint changes sizes',
-    plain:'With slightly non-Gaussian initial conditions, the largest-scale potential <span class="amb">φ</span> (contours) modulates how small-scale structure grows. Sizes shrink where φ is high, most strongly on the largest scales and opposite in sign to galaxy counts. Shapes get no such term.',
-    math:'<span class="amb">local <i>f</i><sub>NL</sub>: <i>δ</i> ln <i>R</i> ⊃ <i>b<sub>φ</sub></i><sup>R</sup> <i>f</i><sub>NL</sub> <i>φ</i>, <i>b<sub>φ</sub></i><sup>R</sup> &lt; 0</span> ⇒ <i>b<sub>R</sub></i>(<i>k</i>) = <i>b</i><sub>1</sub><sup>R</sup> + <i>b<sub>φ</sub></i><sup>R</sup> <i>f</i><sub>NL</sub>/<i>α</i>(<i>k</i>), <i>α</i> ∝ <i>k</i>²<i>T</i>(<i>k</i>)<i>D</i>. Shapes: no 1/<i>k</i>² term at linear order.'},
+    plain:'With slightly non-Gaussian initial conditions, the largest-scale potential <span class="amb">φ</span> (solid contours: high, dashed: low) modulates how small-scale structure grows. Sizes shrink where φ is high, most strongly on the largest scales and opposite in sign to galaxy counts. Shapes get no such term.',
+    math:'<span class="amb">local <i>f</i><sub>NL</sub>: <i>δ</i> ln <i>R</i> ⊃ <i>b<sub>φ</sub></i><sup>R</sup> <i>f</i><sub>NL</sub> <i>φ</i>, <i>b<sub>φ</sub></i><sup>R</sup> &lt; 0</span> ⇒ <i>b<sub>R</sub></i>(<i>k</i>) = <i>b</i><sub>1</sub><sup>R</sup> + <i>b<sub>φ</sub></i><sup>R</sup> <i>f</i><sub>NL</sub>/<i>α</i>(<i>k</i>), <i>α</i> ∝ <i>k</i>²<i>T</i>(<i>k</i>)<i>D</i>. Shapes: no 1/<i>k</i>² term at linear order. Contours: <i>φ</i>/<i>σ<sub>φ</sub></i> = ±0.8, ±1.6.'},
   fnl2: {title:'A directional imprint turns shapes',
     plain:'A direction-dependent (spin-2) imprint would instead tie shapes to the stretch pattern of φ (long streaks). Orientations follow it, most strongly on the largest scales, while sizes and positions, to first order, do not notice.',
     math:'<span class="cya"><i>f</i><sub>NL</sub><sup>(s=2)</sup>: <i>γ</i><sup>I</sup><sub><i>ij</i></sub> ⊃ <i>b<sub>ψ</sub></i> <i>f</i><sub>NL</sub><sup>(s=2)</sup> <i>ψ<sub>ij</sub></i>, <i>ψ<sub>ij</sub></i> = (∂<sub><i>i</i></sub>∂<sub><i>j</i></sub>/∇² − ⅓<i>δ<sub>ij</sub></i>) <i>φ</i></span> ⇒ <i>b<sub>K</sub></i>(<i>k</i>) = <i>b<sub>K</sub></i> + <i>b<sub>ψ</sub></i> <i>f</i><sub>NL</sub><sup>(s=2)</sup>/<i>α</i>(<i>k</i>). Trace-free, so no linear size or count term.'},
@@ -769,7 +780,7 @@ const TXT = {
 const LABELS = {
   fnl:   ['Local non-Gaussianity', 'local <i>f</i><sub>NL</sub>'],
   fnl2:  ['Directional non-Gaussianity', '<i>f</i><sub>NL</sub><sup>(s=2)</sup>'],
-  shape: ['Tidal alignment strength', '|<i>b<sub>K</sub></i>|, relative'],
+  shape: ['Tidal alignment strength', '|<i>b<sub>K</sub></i>| = |<i>b<sub>ψ</sub></i>|, relative'],
   size:  ['Size–density response', '<i>b</i><sub>1</sub><sup>R</sup>, relative'],
   zoom:  ['Zoom', 'zoom'],
 };
@@ -782,12 +793,12 @@ const LEGEND = {
         '<div><b class="cya">spin-2</b><span><i>γ</i><sup>I</sup><sub><i>ij</i></sub> ← <i>K<sub>ij</sub></i>, <i>ψ<sub>ij</sub></i>, <i>f</i><sub>NL</sub><sup>(s=2)</sup></span></div>',
 };
 const NOTE = {
-  plain:'Toy 2D model · galaxy positions frozen · per-galaxy effects exaggerated (alignments ~30×, non-Gaussian terms ~10³×); the curves are not.',
-  math:'2D slice, P_φ ∝ k^(n_s−3) · positions frozen · map: alignment ~30×, PNG terms ~10³× · plot: b₁=2, b_φ=2δ_c(b₁−1); b₁ᴿ=0.3, b_φᴿ=−3; b_ψ=b_K (illustrative)',
+  plain:'Toy 2D model · positions frozen · per-galaxy effects exaggerated (alignments ~30×, non-Gaussian ~10³×). Curves are physical, but local f_NL = 25 is above current limits.',
+  math:'2D slice, P_φ ∝ k^(n_s−3) · positions frozen · map: alignment ~30×, PNG ~10³× · plot: b₁=2, b_φ=2δ_c(b₁−1), b₁ᴿ=0.3, b_φᴿ=−3, b_ψ=b_K; f_NL=25 (≈5σ above Planck), f_NL^(s=2)=100',
 };
 
 const $ = id => document.getElementById(id);
-const UI = {notation:false, scene:-1, exploring:false};
+const UI = {notation:false, scene:-1, exploring:false, busy:false, builtAt:0};
 function setNotation(on){
   UI.notation = on;
   document.body.classList.toggle('notation', on);
@@ -797,7 +808,6 @@ function setNotation(on){
   $('note').textContent = on ? NOTE.math : NOTE.plain;
   $('plothead').textContent = on ? 'Large-scale bias' : 'Response on large scales';
   document.querySelectorAll('#explore label').forEach(l => { l.innerHTML = LABELS[l.dataset.k][on ? 1 : 0]; });
-  UI.scene = -1;                                          // force caption refresh
 }
 function setCaption(i){
   const sc = TXT[SCENES[i].key];
@@ -842,11 +852,12 @@ function clampCenter(){ const h = 0.5/EX.zoom; EX.cx = clamp(EX.cx, h, 1-h); EX.
    9. Clock, input, main loop
    ===================================================================== */
 const params = new URLSearchParams(location.search);
-const clock = {t: (parseFloat(params.get('t')) || 0) % T_TOTAL, paused: params.get('pause') === '1', last: null};
+const T0 = parseFloat(params.get('t'));
+const clock = {t: Number.isFinite(T0) ? ((T0 % T_TOTAL) + T_TOTAL) % T_TOTAL : 0, paused: params.get('pause') === '1', last: null};
 const HARD_PAUSE = clock.paused && !params.has('explore');  // ?pause=1 is a frozen still for slides
-if(!params.has('t') && matchMedia('(prefers-reduced-motion: reduce)').matches){
-  clock.t = 19.5; clock.paused = true;                      // hold a representative frame until the viewer opts in
-}
+/* reduced motion: never autoplay; hold a frame with readable captions (arrows step) until the viewer presses play */
+const RM_HOLD = !HARD_PAUSE && matchMedia('(prefers-reduced-motion: reduce)').matches;
+if(RM_HOLD){ if(!params.has('t')) clock.t = 19.5; clock.paused = true; }
 let U = null;                                               // the current universe
 
 function buildUniverse(seed){
@@ -855,8 +866,8 @@ function buildUniverse(seed){
   const kN = rms(Fd.Kp, Fd.Kx), qN = rms(Fd.Qp, Fd.Qx);
   const [mp, sp] = meanStd(Fd.phi), phiN = Fd.phi.map(v => (v-mp)/sp);
   const u = {seed, target: findCluster(Fd), dens: bakeDensity(Fd), gal: makeGalaxies(Fd, seed),
-    tide: traceLines(Fd.Kp, Fd.Kx, kN, N_TIDE, 9, 1.1/L_BOX, seed+1, true),
-    ptide: traceLines(Fd.Qp, Fd.Qx, qN, 330, 36, 4.5/L_BOX, seed+2, true),
+    tide: traceLines(Fd.Kp, Fd.Kx, kN, N_TIDE, 9, 1.1/L_BOX, seed+1),
+    ptide: traceLines(Fd.Qp, Fd.Qx, qN, 330, 36, 4.5/L_BOX, seed+2),
     pot: bakePotential(phiN)};
   console.info(`universe ${seed}: ${(performance.now()-t0).toFixed(0)} ms`);
   return u;
@@ -868,21 +879,28 @@ function frame(ts){
   if(!clock.paused) clock.t = (clock.t + dt) % T_TOTAL;
   const s = EX || stateAt(clock.t);
 
-  ctx.setTransform(1,0,0,1,0,0);
-  ctx.fillStyle = '#05070d'; ctx.fillRect(0,0,cv.width,cv.height);
-  setDesign();
-  drawSlice(s);
-  drawPlot(s);
+  /* while paused, redraw only when something visible changed */
+  const sig = clock.paused ? JSON.stringify(s) + UI.notation + UI.exploring + U.seed : '';
+  if(!sig || sig !== lastSig){
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.fillStyle = '#05070d'; ctx.fillRect(0,0,cv.width,cv.height);
+    setDesign();
+    drawSlice(s);
+    drawPlot(s);
+    lastSig = sig;
+  }
 
   const i = sceneAt(clock.t);
   if(i !== UI.scene) setCaption(i);
   const tin = clock.t - SCENES[i].t, tout = (i+1 < SCENES.length ? SCENES[i+1].t : T_TOTAL) - clock.t;
-  $('caption').style.opacity = UI.exploring ? 1 : c01(Math.min(tin/0.6, tout/0.35)) * (i === SCENES.length-1 ? s.g : 1);
+  $('caption').style.opacity = clock.paused ? 1 : c01(Math.min(tin/0.6, tout/0.35)) * (i === SCENES.length-1 ? s.g : 1);
   $('plothead').style.opacity = s.plot*s.g;
-  document.body.classList.toggle('noplot', s.plot*s.g < 0.5);
+  /* the legend moves out of the plot's way before the plot fades in, and back only once it is gone */
+  const pv = Math.max(s.plot, track(TRACKS.plot, clock.t + 0.7));
+  document.body.classList.toggle('noplot', pv < 0.01 || s.g < 0.02);
   $('fill').style.width = (clock.t/T_TOTAL*100) + '%';
   tl.setAttribute('aria-valuenow', clock.t.toFixed(1));
-  $('status').textContent = HARD_PAUSE ? '' : clock.paused ? (UI.exploring ? 'exploring' : 'paused') : '';
+  $('status').textContent = UI.busy ? 'building…' : HARD_PAUSE ? '' : clock.paused ? (UI.exploring ? 'exploring' : 'paused') : '';
   requestAnimationFrame(frame);
 }
 
@@ -895,28 +913,38 @@ function seek(t){
   clock.t = ((t % T_TOTAL) + T_TOTAL) % T_TOTAL;
   if(EX) enterExplore();                                  // re-freeze the narrative at the new time
 }
-/* click toggles pause; drag on the slice pans while exploring */
+/* A click on the map toggles pause; elsewhere it may pause but never resume (that would drop explore edits).
+   While exploring, dragging the map pans and the wheel zooms. */
+const inMap = e => { const x = (e.clientX - OX)/SCL, y = (e.clientY - OY)/SCL;
+  return x >= SP.x && x <= SP.x + SP.s && y >= SP.y && y <= SP.y + SP.s; };
 let drag = null;
-cv.addEventListener('pointerdown', e => { drag = {x:e.clientX, y:e.clientY, moved:0}; });
+cv.addEventListener('pointerdown', e => { drag = {id:e.pointerId, x:e.clientX, y:e.clientY, moved:0, map:inMap(e)}; });
 addEventListener('pointermove', e => {
-  if(!drag) return;
+  if(!drag || e.pointerId !== drag.id) return;
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
   drag.moved += Math.abs(dx) + Math.abs(dy);
-  if(EX && drag.moved > 4){ EX.cx -= dx/(SCL*SP.s*EX.zoom); EX.cy -= dy/(SCL*SP.s*EX.zoom); clampCenter(); }
+  if(EX && drag.map && drag.moved > 4){ EX.cx -= dx/(SCL*SP.s*EX.zoom); EX.cy -= dy/(SCL*SP.s*EX.zoom); clampCenter(); }
 });
-addEventListener('pointerup', () => { if(drag && drag.moved <= 4) setPaused(!clock.paused); drag = null; });
+addEventListener('pointerup', e => {
+  if(drag && e.pointerId === drag.id && drag.moved <= 4 && (drag.map || !clock.paused)) setPaused(!clock.paused);
+  drag = null;
+});
+addEventListener('pointercancel', () => { drag = null; });
 cv.addEventListener('wheel', e => {
-  if(!EX) return; e.preventDefault();
+  if(!EX || !inMap(e)) return; e.preventDefault();
   EX.zoom = clamp(EX.zoom*Math.exp(-e.deltaY*0.0015), 1, 5); clampCenter(); syncExplore();
 }, {passive:false});
-/* timeline scrubbing */
+/* timeline scrubbing (pointer capture; cleanup on lostpointercapture covers both up and cancel) */
 const tl = $('timeline');
 function tlSeek(e){ const r = tl.getBoundingClientRect(); seek(c01((e.clientX - r.left)/r.width)*T_TOTAL); }
 tl.addEventListener('pointerdown', e => { e.stopPropagation(); tl.setPointerCapture(e.pointerId); tlSeek(e);
-  const mv = ev => tlSeek(ev), up = () => { tl.removeEventListener('pointermove', mv); tl.removeEventListener('pointerup', up); };
-  tl.addEventListener('pointermove', mv); tl.addEventListener('pointerup', up); });
+  const mv = ev => tlSeek(ev), done = () => { tl.removeEventListener('pointermove', mv); tl.removeEventListener('lostpointercapture', done); };
+  tl.addEventListener('pointermove', mv); tl.addEventListener('lostpointercapture', done); });
 addEventListener('keydown', e => {
+  if(e.ctrlKey || e.metaKey || e.altKey) return;            // leave browser shortcuts alone
   if(e.target.tagName === 'INPUT' && e.code.startsWith('Arrow')) return;
+  const arrow = e.code === 'ArrowRight' || e.code === 'ArrowLeft';
+  if(e.repeat && !arrow){ if(e.code === 'Space') e.preventDefault(); return; }   // held keys only scrub
   if(e.code === 'Space'){ e.preventDefault(); setPaused(!clock.paused); }
   else if(e.code === 'ArrowRight'){ e.preventDefault(); seek(clock.t + 1); }
   else if(e.code === 'ArrowLeft'){ e.preventDefault(); seek(clock.t - 1); }
@@ -927,19 +955,24 @@ $('m-plain').addEventListener('click', () => setNotation(false));
 $('m-math').addEventListener('click', () => setNotation(true));
 $('b-resume').addEventListener('click', () => setPaused(false));
 $('b-reset').addEventListener('click', () => { const n = stateAt(clock.t); Object.assign(EX, {zoom:n.zoom, cx:n.cx, cy:n.cy}); syncExplore(); });
-$('b-seed').addEventListener('click', () => {
-  $('status').textContent = 'building…';
-  setTimeout(() => { U = buildUniverse((U.seed*48271 + 11) % 2147483647); const keep = EX; enterExplore();
-    for(const k of ['fnl','fnl2','shape','size','dm','tide','phi','psi','gal','plot','tint']) EX[k] = keep[k]; syncExplore(); }, 30);
+/* new universe: keep every explore setting; the build blocks for ~1 s, so paint 'building…' first
+   and ignore clicks that queued up meanwhile */
+$('b-seed').addEventListener('click', e => {
+  if(UI.busy || e.timeStamp < (UI.builtAt || 0)) return;
+  UI.busy = true;
+  requestAnimationFrame(() => setTimeout(() => {
+    U = buildUniverse((U.seed*48271 + 11) % 2147483647);
+    UI.busy = false; UI.builtAt = performance.now(); lastSig = '';
+  }));
 });
 
 /* boot: build after first paint so the loading line shows */
 setNotation(params.get('notation') === '1');
 requestAnimationFrame(() => setTimeout(() => {
-  U = buildUniverse(parseInt(params.get('seed')) || 20261014);
+  const seed = parseInt(params.get('seed'), 10);
+  U = buildUniverse(Number.isFinite(seed) ? seed : 20261014);
   $('loading').remove();
-  if(params.get('explore') === '1') clock.paused = true;
-  if(clock.paused && !HARD_PAUSE) enterExplore();
+  if(params.get('explore') === '1' || (clock.paused && !HARD_PAUSE && !RM_HOLD)){ clock.paused = true; enterExplore(); }
   requestAnimationFrame(frame);
 }, 20));
 </script>

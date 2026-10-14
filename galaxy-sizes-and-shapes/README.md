@@ -42,13 +42,13 @@ The two are separated by symmetry. Both grow as 1/[k²T(k)] on the largest scale
 
 | t (s) | scene | what changes |
 |-------|-------|--------------|
-| 0–7   | The dark-matter web | Zel'dovich web of a 2 Gpc/h slice; zoom toward the most massive node |
-| 7–13  | Its tidal field | headless streamlines along the stretching direction of K_ij |
-| 13–20 | Galaxies feel the tide | ellipticals align: along filaments, radial around the cluster (on average) |
-| 20–27 | …and their sizes feel the density, weakly | weak positive size–density response; galaxies tinted by size (amber larger, violet smaller); zoom out |
-| 27–38 | A local imprint changes sizes | local f_NL = 25: sizes shrink where the long-wavelength φ is high (b_φᴿ < 0); counts and sizes split in the plot |
-| 38–49 | A directional imprint turns shapes | f_NL^(s=2) = 100: orientations follow the stretch pattern ψ_ij of φ; only the spin-2 curve moves |
-| 49–56 | Two windows on inflation | both imprints on; fade and loop |
+| 0     | The dark-matter web | Zel'dovich web of a 2 Gpc/h slice; zoom toward the most massive node |
+| 7.2   | Its tidal field | headless streamlines along the stretching direction of K_ij |
+| 13.4  | Galaxies feel the tide | ellipticals align: along filaments, radial around the cluster (on average) |
+| 20.2  | …and their sizes feel the density, weakly | weak positive size–density response; galaxies tinted by size (amber larger, violet smaller); zoom out |
+| 26.6  | A local imprint changes sizes | local f_NL = 25 (above current limits, for visibility): sizes shrink where the long-wavelength φ is high (solid contours; b_φᴿ < 0); counts and sizes split in the plot |
+| 38.0  | A directional imprint turns shapes | f_NL^(s=2) = 100: orientations follow the stretch pattern ψ_ij of φ; only the spin-2 curve moves |
+| 49.4  | Two windows on inflation | both imprints on; fade and loop |
 
 ## Model
 
@@ -71,12 +71,15 @@ The two are separated by symmetry. Both grow as 1/[k²T(k)] on the largest scale
   sub-particles. Their responses are:
 
   ```
-  e      = e_rand − A_K K̃ − A_ψ (f_NL^(s=2)/100) ψ̃        (b_K < 0: long axis ∥ stretch)
-  ln R   = s_rand + A_s δ̃ − A_φ (f_NL/25) φ̃               (b₁ᴿ > 0 small, b_φᴿ < 0)
+  e      = e_rand − A_K [K̃ + (f_NL^(s=2)/100) (A_ψ/A_K) ψ̃]   (b_K < 0: long axis ∥ stretch; b_ψ = b_K)
+  ln R   = s_rand + A_s [ln(1+δ_s)]̃ − A_φ (f_NL/25) φ̃        (b₁ᴿ > 0 small, b_φᴿ < 0)
   ```
 
-  Here ˜ marks fields normalised to unit rms. Ellipses keep their area as they
-  stretch, so size and shape are independent.
+  Here ˜ marks fields normalised to unit rms. The size term uses the
+  log-density, which equals δ_s at linear order (so it still maps to b₁ᴿ δ) and
+  keeps cluster galaxies from blowing up. The explore-mode alignment slider
+  scales both spin-2 terms together. Ellipses keep their area as they stretch,
+  so size and shape are independent.
 - **Response plot.** One panel per spin, with b(k) = b + b_φ f / α(k) and
   illustrative biases:
   - counts: b₁ = 2, b_φ = 2δ_c(b₁ − 1);
@@ -94,9 +97,12 @@ The two are separated by symmetry. Both grow as 1/[k²T(k)] on the largest scale
   - PNG-induced per-galaxy size or shape shifts are ≲10⁻³ for allowed f_NL.
     Here they are about 10³× too strong.
 - **The spatial structure is not a cartoon.**
-  - The PNG terms follow φ and ψ_ij, which are smoother than δ and K_ij by
-    exactly 1/α(k).
-  - The plot uses the physical α(k) with the bias values above.
+  - The PNG terms follow φ and ψ_ij. Physically these are smoother than δ and
+    K_ij by 1/α(k). Here φ is also smoothed at 40 Mpc/h (δ and K_ij at 9 Mpc/h),
+    so only its long-wavelength part is drawn.
+  - The plot uses the physical α(k) with the bias values above. The narrative
+    local f_NL = 25 is about 5σ above the Planck limit, chosen so the upturn is
+    visible. f_NL^(s=2) = 100 lies within the current BOSS bound.
 - **Positions are frozen**, so you see only the size and shape responses. In
   reality local f_NL also shifts galaxy counts (Dalal et al. 2008). The dashed
   "counts" curve shows that.
