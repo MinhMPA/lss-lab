@@ -66,13 +66,15 @@
   #math{margin-top:14px;font:19px/1.5 var(--serif);color:#d9dce6;padding-left:14px;
     border-left:2px solid var(--line);display:none}
   body.notation #math{display:block}
+  body.notation #body{font-size:21px;line-height:1.42}
+  body.notation #math{margin-top:10px;font:18px/1.45 var(--serif)}
   #math i{font-style:italic}
 
   #plothead{left:1090px;top:440px;width:770px;font-size:15px;letter-spacing:.2em;
     text-transform:uppercase;color:var(--dim)}
 
   #legend{left:1090px;top:800px;width:770px;font-size:19px;line-height:1.5;color:#c3c7d2;transition:top .6s}
-  body.noplot #legend{top:452px}
+  body.noplot #legend{top:452px;transition:none}
   #legend div{display:flex;gap:14px;align-items:baseline;margin-bottom:8px}
   #legend b{font-weight:600;min-width:120px}
 
@@ -83,8 +85,8 @@
   body.exploring #plothead{top:226px}
   .xrow{display:grid;grid-template-columns:370px 1fr 70px;gap:14px;align-items:center;height:40px}
   .xrow output{font:16px var(--mono);text-align:right;color:var(--ink)}
-  .xrow input{width:100%;accent-color:var(--cyan)}
-  .xrow.amb input{accent-color:var(--amber)}
+  .xrow input{width:100%;accent-color:var(--dim)}
+  .xrow.amb input{accent-color:var(--amber)} .xrow.cya input{accent-color:var(--cyan)}
   .chips,.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
   .chips button,.btns button{font:500 15px var(--sans);color:var(--dim);background:transparent;
     border:1px solid var(--line);border-radius:7px;padding:6px 11px;cursor:pointer}
@@ -101,7 +103,7 @@
     display:flex;justify-content:space-between}
   #status{color:var(--dim)}
 
-  #note{left:76px;top:986px;width:930px;font:14px var(--mono);color:var(--dim);letter-spacing:.03em}
+  #note{left:60px;top:986px;width:930px;font:14px var(--mono);color:var(--dim);letter-spacing:.03em}
   #loading{left:0;top:0;width:1920px;height:1080px;display:flex;align-items:center;justify-content:center;
     font:16px var(--mono);letter-spacing:.2em;color:var(--dim);text-transform:uppercase}
 </style>
@@ -126,8 +128,8 @@
   <div id="legend"></div>
   <div id="explore" role="group" aria-label="Explore controls">
     <div class="xrow amb"><label for="x-fnl" data-k="fnl"></label><input id="x-fnl" type="range" min="-50" max="50" step="1"><output id="o-fnl"></output></div>
-    <div class="xrow"><label for="x-fnl2" data-k="fnl2"></label><input id="x-fnl2" type="range" min="-300" max="300" step="5"><output id="o-fnl2"></output></div>
-    <div class="xrow"><label for="x-shape" data-k="shape"></label><input id="x-shape" type="range" min="0" max="1.5" step="0.01"><output id="o-shape"></output></div>
+    <div class="xrow cya"><label for="x-fnl2" data-k="fnl2"></label><input id="x-fnl2" type="range" min="-300" max="300" step="5"><output id="o-fnl2"></output></div>
+    <div class="xrow cya"><label for="x-shape" data-k="shape"></label><input id="x-shape" type="range" min="0" max="1.5" step="0.01"><output id="o-shape"></output></div>
     <div class="xrow amb"><label for="x-size" data-k="size"></label><input id="x-size" type="range" min="-1.5" max="1.5" step="0.01"><output id="o-size"></output></div>
     <div class="xrow"><label for="x-zoom" data-k="zoom"></label><input id="x-zoom" type="range" min="1" max="5" step="0.01"><output id="o-zoom"></output></div>
     <div class="chips" id="chips"></div>
@@ -172,7 +174,8 @@ const F_LOC = 25, F_S2 = 100;                // narrative f_NL (local, spin-2); 
 const R0 = 4.6;                              // base galaxy radius, design px
 /* illustrative large-scale biases for the response plot */
 const DELTA_C = 1.686;
-const BIAS = {b1:2, bphi:2*DELTA_C*(2-1), b1R:0.3, bphiR:-3, psiOverK:1};
+const BIAS = {b1:2, b1R:0.3, bphiR:-3, psiOverK:1};     // counts: b1; sizes: b1^R, bphi^R; shapes: b_psi/b_K
+BIAS.bphi = 2*DELTA_C*(BIAS.b1 - 1);                      // universal-mass-function relation (sizes violate it)
 
 /* =====================================================================
    2. Small utilities
@@ -645,7 +648,10 @@ function drawRing(s, C){
 }
 
 function drawScaleBar(s, C, a){
-  const mpc = [500,200,100,50].find(m => m/L_BOX*C.k <= 260) || 50, len = mpc/L_BOX*C.k;
+  const MLY = 3.2616/COSMO.h;                                 // million light-years per Mpc/h
+  const opts = UI.notation ? [500,200,100,50].map(m => [m, `${m} Mpc/h`])
+             : [2000,1000,500,250].map(m => [m/MLY, `${m >= 1000 ? m/1000 + ' billion' : m + ' million'} light-years`]);
+  const [mpc, label] = opts.find(([m]) => m/L_BOX*C.k <= 260) || opts[3], len = mpc/L_BOX*C.k;
   const x = SP.x + SP.s - 24 - len, y = SP.y + SP.s - 28, right = x + len;
   ctx.save(); ctx.globalAlpha = a;
   ctx.fillStyle = 'rgba(5,7,13,0.62)'; ctx.fillRect(Math.min(x, right - 230) - 10, y - 34, right - Math.min(x, right - 230) + 20, 52);
@@ -654,8 +660,7 @@ function drawScaleBar(s, C, a){
   ctx.moveTo(x+len, y-5); ctx.lineTo(x+len, y+5); ctx.stroke();
   ctx.fillStyle = 'rgba(233,231,220,0.8)'; ctx.font = '15px ' + MONO;
   ctx.textAlign = 'right';
-  const ly = mpc*3.2616/COSMO.h/1000;                       // billion light-years
-  ctx.fillText(UI.notation ? `${mpc} Mpc/h` : `${ly < 1 ? (ly*1000).toFixed(0)+' million' : ly.toFixed(1)+' billion'} light-years`, right, y-12);
+  ctx.fillText(label, right, y-12);
   ctx.restore();
 }
 
@@ -681,7 +686,7 @@ function drawSlice(s){
 /* response vs scale, one panel per spin: b(k) = b + b_phi f / alpha(k) */
 const LK0 = -3, LK1 = Math.log10(0.5);
 const PANELS = [
-  {key:'spin0', h:118, y0:-3, y1:5, ref:0, ticks:[[0,'0'],[2,'2']], tag:['sizes · counts','spin-0']},
+  {key:'spin0', h:118, y0:-3, y1:5, ref:0, ticks:[[0,'0'],[BIAS.b1, String(BIAS.b1)]], tag:['sizes · counts','spin-0']},
   {key:'spin2', h:84,  y0:0,  y1:3, ref:1, ticks:[[1,'1'],[2,'2']], tag:['shapes','spin-2']},
 ];
 const PGAP = 34;
@@ -703,7 +708,7 @@ function drawPlot(s){
   ctx.strokeStyle = 'rgba(233,231,220,0.25)'; ctx.lineWidth = 1; ctx.setLineDash([3,5]);
   ctx.beginPath(); ctx.moveTo(pk(lkv), yTop); ctx.lineTo(pk(lkv), yBot); ctx.stroke(); ctx.setLineDash([]);
   ctx.font = '14px ' + MONO; ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(233,231,220,0.5)';
-  ctx.fillText(UI.notation ? 'scales in view' : 'in view', pk(lkv)+8, yTop - 8);
+  ctx.fillText('scales in view', pk(lkv)+8, yTop - 8);
 
   let y = yTop;
   for(const P of PANELS){
@@ -716,7 +721,9 @@ function drawPlot(s){
     ctx.fillText(P.tag[UI.notation ? 1 : 0].toUpperCase(), RP.x, y - 8);
     const fv = Math.round(P.key === 'spin0' ? s.fnl : s.fnl2);
     if(fv){ ctx.font = '14px ' + MONO; ctx.textAlign = 'right';
-      ctx.fillText((P.key === 'spin0' ? 'f_NL = ' : 'f_NL^(s=2) = ') + fv, RP.x + RP.w, y - 8); }
+      const lab = UI.notation ? (P.key === 'spin0' ? 'f_NL = ' : 'f_NL^(s=2) = ')
+                              : (P.key === 'spin0' ? 'local f_NL = ' : 'directional f_NL = ');
+      ctx.fillText(lab + fv, RP.x + RP.w, y - 8); }
     if(UI.notation){
       ctx.font = '14px ' + MONO; ctx.textAlign = 'right';
       for(const [v, lab] of P.ticks) ctx.fillText(lab, RP.x - 8, py(v) + 5);
@@ -760,41 +767,41 @@ const TXT = {
     math:'<i>δ</i>(<b>x</b>): matter overdensity in a 2 Gpc/<i>h</i> slice, grown from Gaussian initial conditions (Zel’dovich approximation).'},
   tide: {title:'Its tidal field',
     plain:'Around every clump, gravity pulls unevenly: it stretches matter one way and squeezes it the other. The streaks trace the stretch. They have no arrowheads, since a stretch looks the same turned by 180°.',
-    math:'<span class="cya"><i>K<sub>ij</sub></i> = (∂<sub><i>i</i></sub>∂<sub><i>j</i></sub>/∇² − ⅓<i>δ<sub>ij</sub></i>) <i>δ</i></span>: the trace-free tidal tensor, spin-2. Streaks follow its stretching direction (in-plane components).'},
+    math:'<span class="cya"><i>K<sub>ij</sub></i> = (∂<sub><i>i</i></sub>∂<sub><i>j</i></sub>/∇² − ⅓<i>δ<sub>ij</sub></i>) <i>δ</i></span>: the trace-free tidal tensor, spin-2, from <i>δ</i> smoothed at 9 Mpc/<i>h</i>. Streaks follow its stretching direction (in-plane components).'},
   shapes: {title:'Galaxies feel the tide',
-    plain:'Galaxies form inside this field and are stretched by it. Red ellipticals tend to line up: on average their long axes run along filaments and point toward clusters, so their shapes trace the web.',
+    plain:'Galaxies form inside this field and are stretched by it. Elliptical galaxies tend to line up: on average their long axes run along filaments and point toward clusters (circled), so their shapes trace the web.',
     math:'<span class="cya"><i>γ</i><sup>I</sup><sub><i>ij</i></sub> = <i>b<sub>K</sub></i> <i>K<sub>ij</sub></i></span> + shape noise (linear / nonlinear alignment). <i>b<sub>K</sub></i> &lt; 0: the long axis follows the stretching direction, radial around clusters on average.'},
   sizes: {title:'…and their sizes feel the density, weakly',
-    plain:'Sizes respond too, but only weakly: galaxies in denser surroundings come out slightly larger (amber) than those near voids (violet). Shapes and sizes are two extra maps of the structure.',
-    math:'<span class="amb"><i>δ</i> ln <i>R</i> = <i>b</i><sub>1</sub><sup>R</sup> <i>δ</i></span> + size scatter: the spin-0 trace of the shape tensor. <i>b</i><sub>1</sub><sup>R</sup> is small (≈ 0 for galaxy-mass halos; Nguyen, Akitsu &amp; Taruya 2026). On large scales <i>b</i>(<i>k</i>) → const.'},
+    plain:'Sizes respond too, but only weakly: galaxies in denser surroundings come out slightly larger (tinted amber) than those near voids. Shapes and sizes are two extra maps of the web. The plot tracks each response by scale: flat, so far.',
+    math:'<span class="amb"><i>δ</i> ln <i>R</i> = <i>b</i><sub>1</sub><sup>R</sup> <i>δ</i></span> + size scatter: the spin-0 trace of the shape tensor. <i>b</i><sub>1</sub><sup>R</sup> is small (≈ 0 for galaxy-mass halos; Nguyen, Akitsu &amp; Taruya 2026). Gaussian initial conditions: <i>b</i><sub>1</sub><sup>R</sup>, <i>b<sub>K</sub></i> independent of <i>k</i>.'},
   fnl: {title:'A local imprint changes sizes',
-    plain:'With slightly non-Gaussian initial conditions, the largest-scale potential <span class="amb">φ</span> (solid contours: high, dashed: low) modulates how small-scale structure grows. Sizes shrink where φ is high, most strongly on the largest scales and opposite in sign to galaxy counts. Shapes get no such term.',
-    math:'<span class="amb">local <i>f</i><sub>NL</sub>: <i>δ</i> ln <i>R</i> ⊃ <i>b<sub>φ</sub></i><sup>R</sup> <i>f</i><sub>NL</sub> <i>φ</i>, <i>b<sub>φ</sub></i><sup>R</sup> &lt; 0</span> ⇒ <i>b<sub>R</sub></i>(<i>k</i>) = <i>b</i><sub>1</sub><sup>R</sup> + <i>b<sub>φ</sub></i><sup>R</sup> <i>f</i><sub>NL</sub>/<i>α</i>(<i>k</i>), <i>α</i> ∝ <i>k</i>²<i>T</i>(<i>k</i>)<i>D</i>. Shapes: no 1/<i>k</i>² term at linear order. Contours: <i>φ</i>/<i>σ<sub>φ</sub></i> = ±0.8, ±1.6.'},
+    plain:'With slightly non-Gaussian initial conditions (a local imprint), the primordial potential <span class="amb">φ</span> (solid contours: high, dashed: low) tunes how galaxies form. Sizes swell where φ is low and shrink where it is high, more so on larger scales; counts (dashed curve) do the opposite. Shapes are untouched.',
+    math:'<span class="amb">local <i>f</i><sub>NL</sub>: <i>δ</i> ln <i>R</i> ⊃ <i>b<sub>φ</sub></i><sup>R</sup> <i>f</i><sub>NL</sub> <i>φ</i>, <i>b<sub>φ</sub></i><sup>R</sup> &lt; 0</span> ⇒ <i>b<sub>R</sub></i>(<i>k</i>) = <i>b</i><sub>1</sub><sup>R</sup> + <i>b<sub>φ</sub></i><sup>R</sup> <i>f</i><sub>NL</sub>/<i>α</i>(<i>k</i>), <i>α</i> ∝ <i>k</i>²<i>T</i>(<i>k</i>)<i>D</i>. Contours: <i>φ</i>/<i>σ<sub>φ</sub></i> = ±0.8, ±1.6, smoothed at 40 Mpc/<i>h</i>.'},
   fnl2: {title:'A directional imprint turns shapes',
-    plain:'A direction-dependent (spin-2) imprint would instead tie shapes to the stretch pattern of φ (long streaks). Orientations follow it, most strongly on the largest scales, while sizes and positions, to first order, do not notice.',
+    plain:'A direction-dependent imprint would add a second alignment, tying shapes to the stretch pattern ψ of φ (long streaks). Orientations follow it, most strongly on the largest scales, while sizes and positions barely notice.',
     math:'<span class="cya"><i>f</i><sub>NL</sub><sup>(s=2)</sup>: <i>γ</i><sup>I</sup><sub><i>ij</i></sub> ⊃ <i>b<sub>ψ</sub></i> <i>f</i><sub>NL</sub><sup>(s=2)</sup> <i>ψ<sub>ij</sub></i>, <i>ψ<sub>ij</sub></i> = (∂<sub><i>i</i></sub>∂<sub><i>j</i></sub>/∇² − ⅓<i>δ<sub>ij</sub></i>) <i>φ</i></span> ⇒ <i>b<sub>K</sub></i>(<i>k</i>) = <i>b<sub>K</sub></i> + <i>b<sub>ψ</sub></i> <i>f</i><sub>NL</sub><sup>(s=2)</sup>/<i>α</i>(<i>k</i>). Trace-free, so no linear size or count term.'},
   both: {title:'Two windows on inflation',
-    plain:'Sizes and shapes are two new windows on the first instants. Sizes respond to local non-Gaussianity opposite to galaxy counts, so combining the two sharpens the test. Only shapes see its directional form.',
+    plain:'Sizes and shapes are two new windows on inflation, the universe’s first instants. Sizes respond to a local imprint opposite to galaxy counts, so counts and sizes together measure it more sharply. Only shapes respond to a directional imprint.',
     math:'spin-0 (counts, sizes) ↔ <span class="amb">local <i>f</i><sub>NL</sub></span>; spin-2 (shapes) ↔ <span class="cya"><i>f</i><sub>NL</sub><sup>(s=2)</sup></span>; both ∝ 1/[<i>k</i>²<i>T</i>(<i>k</i>)] on large scales [Nguyen, Akitsu &amp; Taruya 2026; Schmidt, Chisari &amp; Dvorkin 2015].'},
 };
 const LABELS = {
-  fnl:   ['Local non-Gaussianity', 'local <i>f</i><sub>NL</sub>'],
-  fnl2:  ['Directional non-Gaussianity', '<i>f</i><sub>NL</sub><sup>(s=2)</sup>'],
+  fnl:   ['Local imprint (f<sub>NL</sub>)', 'local <i>f</i><sub>NL</sub>'],
+  fnl2:  ['Directional imprint (f<sub>NL</sub>)', '<i>f</i><sub>NL</sub><sup>(s=2)</sup>'],
   shape: ['Tidal alignment strength', '|<i>b<sub>K</sub></i>| = |<i>b<sub>ψ</sub></i>|, relative'],
   size:  ['Size–density response', '<i>b</i><sub>1</sub><sup>R</sup>, relative'],
   zoom:  ['Zoom', 'zoom'],
 };
-const LAYERS = [['dm','Dark matter'],['tide','Tidal field'],['phi','Potential φ'],['psi','Primordial tide ψ'],['gal','Galaxies']];
+const LAYERS = [['dm','Dark matter'],['tide','Tidal field'],['phi','Potential φ'],['psi','Stretch pattern ψ'],['gal','Galaxies']];
 const LAYER_ON = {dm:0.75, tide:1, phi:1, psi:1, gal:1};
 const LEGEND = {
-  plain:'<div><b class="amb">amber</b><span>sizes and what changes them: density, the potential φ, local non-Gaussianity</span></div>'+
-        '<div><b class="cya">cyan</b><span>shapes and what turns them: the tidal field, the stretch pattern ψ of φ, directional non-Gaussianity</span></div>',
+  plain:'<div><b class="amb">amber</b><span>sizes, and what changes them: density, the primordial potential φ, a local imprint</span></div>'+
+        '<div><b class="cya">cyan</b><span>shapes, and what turns them: the tidal field, the stretch pattern ψ of φ, a directional imprint</span></div>',
   math: '<div><b class="amb">spin-0</b><span><i>δ</i> ln <i>R</i> ← <i>δ</i>, <i>φ</i>, local <i>f</i><sub>NL</sub> &nbsp;(counts too)</span></div>'+
         '<div><b class="cya">spin-2</b><span><i>γ</i><sup>I</sup><sub><i>ij</i></sub> ← <i>K<sub>ij</sub></i>, <i>ψ<sub>ij</sub></i>, <i>f</i><sub>NL</sub><sup>(s=2)</sup></span></div>',
 };
 const NOTE = {
-  plain:'Toy 2D model · positions frozen · per-galaxy effects exaggerated (alignments ~30×, non-Gaussian ~10³×). Curves are physical, but local f_NL = 25 is above current limits.',
-  math:'2D slice, P_φ ∝ k^(n_s−3) · positions frozen · map: alignment ~30×, PNG ~10³× · plot: b₁=2, b_φ=2δ_c(b₁−1), b₁ᴿ=0.3, b_φᴿ=−3, b_ψ=b_K; f_NL=25 (≈5σ above Planck), f_NL^(s=2)=100',
+  plain:'Toy 2D model · positions frozen · per-galaxy effects exaggerated (alignments ~30×, imprints ~10³×). Curves are physical; local f_NL = 25 is above current limits, directional f_NL = 100 within them.',
+  math:`2D slice, P_φ ∝ k^(n_s−3) · positions frozen · map: alignment ~30×, PNG ~10³× · plot: b₁=${BIAS.b1}, b_φ=2δ_c(b₁−1), b₁ᴿ=${BIAS.b1R}, b_φᴿ=${String(BIAS.bphiR).replace('-','−')}, b_ψ=b_K; f_NL=${F_LOC} (≈5σ above Planck), f_NL^(s=2)=${F_S2} (within BOSS)`,
 };
 
 const $ = id => document.getElementById(id);
@@ -806,7 +813,7 @@ function setNotation(on){
   $('m-plain').setAttribute('aria-pressed', !on); $('m-math').setAttribute('aria-pressed', on);
   $('legend').innerHTML = on ? LEGEND.math : LEGEND.plain;
   $('note').textContent = on ? NOTE.math : NOTE.plain;
-  $('plothead').textContent = on ? 'Large-scale bias' : 'Response on large scales';
+  $('plothead').textContent = on ? 'Large-scale bias' : 'Strength of response, by scale';
   document.querySelectorAll('#explore label').forEach(l => { l.innerHTML = LABELS[l.dataset.k][on ? 1 : 0]; });
 }
 function setCaption(i){
@@ -895,6 +902,7 @@ function frame(ts){
   const tin = clock.t - SCENES[i].t, tout = (i+1 < SCENES.length ? SCENES[i+1].t : T_TOTAL) - clock.t;
   $('caption').style.opacity = clock.paused ? 1 : c01(Math.min(tin/0.6, tout/0.35)) * (i === SCENES.length-1 ? s.g : 1);
   $('plothead').style.opacity = s.plot*s.g;
+  $('legend').style.opacity = s.gal*s.g;                  // the colour key appears with the first coloured thing
   /* the legend moves out of the plot's way before the plot fades in, and back only once it is gone */
   const pv = Math.max(s.plot, track(TRACKS.plot, clock.t + 0.7));
   document.body.classList.toggle('noplot', pv < 0.01 || s.g < 0.02);

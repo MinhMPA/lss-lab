@@ -7,7 +7,7 @@ shows how **primordial non-Gaussianity** (PNG) adds a scale-dependent term to
 each response:
 
 - **local f_NL** reaches sizes (and counts);
-- **anisotropic, spin-2 f_NL** reaches shapes.
+- **directional (spin-2) f_NL**, written f_NL^(s=2), reaches shapes.
 
 The two are separated by symmetry. Both grow as 1/[k²T(k)] on the largest scales.
 
@@ -42,10 +42,10 @@ The two are separated by symmetry. Both grow as 1/[k²T(k)] on the largest scale
 
 | t (s) | scene | what changes |
 |-------|-------|--------------|
-| 0     | The dark-matter web | Zel'dovich web of a 2 Gpc/h slice; zoom toward the most massive node |
+| 0     | The dark-matter web | Zel'dovich web of a 2 Gpc/h slice; zoom toward the densest node near the centre |
 | 7.2   | Its tidal field | headless streamlines along the stretching direction of K_ij |
 | 13.4  | Galaxies feel the tide | ellipticals align: along filaments, radial around the cluster (on average) |
-| 20.2  | …and their sizes feel the density, weakly | weak positive size–density response; galaxies tinted by size (amber larger, violet smaller); zoom out |
+| 20.2  | …and their sizes feel the density, weakly | weak positive size–density response; galaxies tinted by size (amber larger, faint grey-violet smaller); zoom out |
 | 26.6  | A local imprint changes sizes | local f_NL = 25 (above current limits, for visibility): sizes shrink where the long-wavelength φ is high (solid contours; b_φᴿ < 0); counts and sizes split in the plot |
 | 38.0  | A directional imprint turns shapes | f_NL^(s=2) = 100: orientations follow the stretch pattern ψ_ij of φ; only the spin-2 curve moves |
 | 49.4  | Two windows on inflation | both imprints on; fade and loop |
@@ -59,11 +59,11 @@ The two are separated by symmetry. Both grow as 1/[k²T(k)] on the largest scale
   in wells.
 - **Density.** δ(k) = α(k) φ(k), with α(k) = 2k²T(k)D(z)/(3Ω_m H₀²) (c = 1,
   D = a during matter domination, EH98 transfer function).
-- **Web.** Truncated Zel'dovich displacement gives the web. The density image is
+- **Web.** Truncated Zel'dovich displacement (Gaussian cut at 5.5 Mpc/h) gives the web. The density image is
   rendered from 3×3 sub-particles per cell.
-- **Tidal field.** It comes from the smoothed evolved density, the field-level
-  analogue of NLA, so streamlines and galaxies agree where galaxies sit. Only the
-  in-plane trace-free components are drawn, (K₁₁−K₂₂)/2 and K₁₂. The 3D trace
+- **Tidal field.** It comes from the evolved density smoothed at 9 Mpc/h, the
+  field-level analogue of NLA, so streamlines and galaxies agree where galaxies sit. Only the
+  in-plane trace-free components are drawn: (K₁₁−K₂₂)/2 and K₁₂. The 3D trace
   convention (⅓δ_ij on screen) therefore does not affect what is drawn.
 - **ψ_ij.** Uses the same operator on the long-wavelength φ, smoothed at
   40 Mpc/h, which keeps k ≪ k_galaxy as the peak–background split requires.
@@ -71,7 +71,7 @@ The two are separated by symmetry. Both grow as 1/[k²T(k)] on the largest scale
   sub-particles. Their responses are:
 
   ```
-  e      = e_rand − A_K [K̃ + (f_NL^(s=2)/100) (A_ψ/A_K) ψ̃]   (b_K < 0: long axis ∥ stretch; b_ψ = b_K)
+  e      = e_rand − A_K K̃ − A_ψ (f_NL^(s=2)/100) ψ̃          (b_K < 0: long axis ∥ stretch)
   ln R   = s_rand + A_s [ln(1+δ_s)]̃ − A_φ (f_NL/25) φ̃        (b₁ᴿ > 0 small, b_φᴿ < 0)
   ```
 
