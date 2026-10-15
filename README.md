@@ -16,6 +16,15 @@ space.
   Open `cosmic-web-sandbox/index.html` in a browser; no build step required.
   See its [README](cosmic-web-sandbox/README.md) for details.
 
+- **[galaxy-sizes-and-shapes](galaxy-sizes-and-shapes/)** — *Galaxy Sizes &
+  Shapes*, a looping lecture animation with an explore mode. Galaxy shapes
+  align with the tidal field of the cosmic web and their sizes follow its
+  density; then primordial non-Gaussianity adds scale-dependent responses, a
+  local imprint to sizes and a directional one to shapes. Switch either
+  observable off to watch the other alone. Open
+  `galaxy-sizes-and-shapes/index.html`; no build step required. See its
+  [README](galaxy-sizes-and-shapes/README.md) for the model and references.
+
 ## License
 
 TBD.
