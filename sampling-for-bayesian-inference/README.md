@@ -35,16 +35,21 @@ nested sampling, a hierarchical funnel and research frontiers will be added.
 - The page loads its data (`traces/*.json`) over HTTP. Use it from GitHub Pages,
   or locally with `python3 -m http.server` in this folder. It does not work from
   `file://`. No other network access is needed: fonts and KaTeX are bundled.
+- The default view is built for projection. It shows the plot, a short title
+  per step and at most two numbers, so the audience gets a picture of each
+  method. Details are one key away.
 - Keys:
-  - **Space**: play/pause.
+  - **PageDown / PageUp**: next or previous step; works with presentation
+    clickers.
+  - **Space**: autoplay. It pauses on each step's picture.
   - **← / →**: one recorded event back or forward.
-  - **PageUp / PageDown**: previous or next storyboard beat; works with
-    presentation clickers.
   - **R**: reset.
   - **1–3**: switch modules.
-  - **E**: expert view, which includes the proposal-only cut-sensitivity view
-    and the `n_networks` 4-vs-0 comparison.
-  - **M**: math captions.
+  - **E**: expert view, with the full trace label, uncertainties, separate
+    counters, settings, caveats, the proposal-only cut-sensitivity view and the
+    `n_networks` 4-vs-0 comparison.
+  - **N**: speaker notes for the current step.
+  - **M**: formula caption.
   - **T**: dark theme.
 - The stage is a fixed 1280×720 logical canvas, scaled to fit any 16:9 screen.
 
