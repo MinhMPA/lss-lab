@@ -8,48 +8,41 @@ channel. A linear response gives a correlated Gaussian posterior. A quadratic
 response gives a curved ridge (`B-curved`) or two separated solutions with
 opposite signs of `a` (`B-separated`).
 
-**Status: preview.** This build contains two modules:
+**Status: preview.** Each method is told as its key idea in three building
+blocks plus one failure, one picture per clicker step. This build has two
+modules:
 
-1. **INS: frozen shells.** Importance nested sampling as a stratified estimator,
-   Ẑ = Σᵢ Vᵢ · mean(L)ᵢ. Fresh samples are drawn in disjoint prior-volume shells
-   and weighted by L·Vᵢ/Nᵢ. The shell volumes come from an independent
-   geometry-only random stream. This is a pedagogical construction, labelled
-   "Nautilus-inspired".
-2. **Nautilus: learned proposals.** A replay of an *actual* Nautilus 1.0.6 run.
-   One neural bound is frozen and shown in six steps:
-   1. the evaluated points;
-   2. the enclosing ellipsoid;
-   3. local coordinates and the split-rank score targets;
-   4. the regression, including the calibrated cut (which is not 0.5);
-   5. the learned proposal region;
-   6. candidates filtered by the network before any true-likelihood call.
+1. **The inverse problem**: parameters predict data; many parameter pairs
+   fit; projecting the posterior cloud widens the error bar (0.12 → 0.51).
+2. **Learn where to propose** (importance nested sampling and Nautilus):
+   - keep every evaluated point, weighted by its shell (a teaching demo);
+   - a network learns the good region from an *actual* Nautilus 1.0.6 run;
+   - candidates outside the region are rejected before any likelihood call;
+   - failure: a hypothetical too-tight region leaves part of the ridge
+     under-represented, because reweighting cannot create points that were
+     never drawn.
 
-   Posterior and evidence use the true likelihood with Nautilus's own importance
-   weights. *Learn where to propose; evaluate what is true.*
-
-Modules on importance sampling, random-walk Metropolis vs HMC, classical
-nested sampling, a hierarchical funnel and research frontiers will be added.
+Importance sampling, Metropolis, HMC, nested sampling and a closing "next
+10 years" scene will be added in the same style.
 
 ## Using it
 
 - The page loads its data (`traces/*.json`) over HTTP. Use it from GitHub Pages,
   or locally with `python3 -m http.server` in this folder. It does not work from
   `file://`. No other network access is needed: fonts and KaTeX are bundled.
-- The default view is built for projection. It shows the plot, a short title
-  per step and at most two numbers, so the audience gets a picture of each
-  method. Details are one key away.
+- Each picture animates for a few seconds, then holds; titles are at most
+  five words, and each module shows one number.
 - Keys:
-  - **PageDown / PageUp**: next or previous step; works with presentation
-    clickers.
-  - **Space**: autoplay. It pauses on each step's picture.
-  - **← / →**: one recorded event back or forward.
-  - **R**: reset.
-  - **1–3**: switch modules.
-  - **E**: expert view, with the full trace label, uncertainties, separate
-    counters, settings, caveats, the proposal-only cut-sensitivity view and the
-    `n_networks` 4-vs-0 comparison.
-  - **N**: speaker notes for the current step.
-  - **M**: formula caption.
+  - **PageDown / →**: next building block (it animates in place).
+  - **PageUp / ←**: previous block.
+  - **Space**: replay the current block.
+  - **R**: back to the first block.
+  - **Digits**: switch modules.
+  - **E**: details overlay with the data behind the picture: trace label,
+    settings, separate counters and diagnostics, and a note when the picture
+    is a replay or hypothetical.
+  - **N**: speaker notes.
+  - **M**: formula.
   - **T**: dark theme.
 - The stage is a fixed 1280×720 logical canvas, scaled to fit any 16:9 screen.
 
