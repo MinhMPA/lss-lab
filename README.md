@@ -25,16 +25,6 @@ space.
   `galaxy-sizes-and-shapes/index.html`; no build step required. See its
   [README](galaxy-sizes-and-shapes/README.md) for the model and references.
 
-- **[sampling-for-bayesian-inference](sampling-for-bayesian-inference/)** —
-  *Sampling for Bayesian Inference*, interactive demonstrations for the talk
-  "The Last 70 Years (and the Next 10) of Sampling". Importance nested sampling
-  with frozen prior-volume shells, then a replay of an actual Nautilus run
-  showing how its neural network learns proposal regions while the weights
-  still use the true likelihood. Preview; more samplers to come. Built with
-  Vite from a separate source repository and served over HTTP (it loads JSON
-  traces, so it does not open from `file://`). See its
-  [README](sampling-for-bayesian-inference/README.md).
-
 ## License
 
 TBD.
